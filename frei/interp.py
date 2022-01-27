@@ -3,7 +3,6 @@ import numpy as np
 __all__ = ['evaluate_bezier']
 
 
-# find the a & b points
 def get_bezier_coef(points):
     """
     Parameters
@@ -40,7 +39,7 @@ def get_bezier_coef(points):
     B[n - 1] = (A[n - 1] + points[n]) / 2
     return A, B
 
-# returns the general Bezier cubic formula given 4 control points
+
 def get_cubic(a, b, c, d, t):
     return (
         np.power(1 - t, 3) * a + 
@@ -49,7 +48,7 @@ def get_cubic(a, b, c, d, t):
         np.power(t, 3) * d
     )
 
-# return one cubic curve for each consecutive points
+
 def get_bezier_cubic(points, t):
     A, B = get_bezier_coef(points)
     broadcast = np.ones_like(t)
@@ -60,14 +59,13 @@ def get_bezier_cubic(points, t):
         pts_p1_broadcast, t
     ).reshape((-1, 2), order='F')
 
-# evalute each cubic curve on the range [0, 1] sliced in n points
+
 def evaluate_bezier(points, n):
     """
     Parameters
     ----------
     points : array with shape (n_points, 2)
         points to interpolate
-        
     n : int
         Number of interpolated points to return between neighboring points
     

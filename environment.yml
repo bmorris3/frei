@@ -1,0 +1,7 @@
+name: frei
+channels:
+  - conda-forge
+dependencies:
+  - astropy
+  - pip:
+    - pytest-astropy
