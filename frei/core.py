@@ -1,8 +1,4 @@
-import sys
-sys.path.insert(0, '/Users/brettmorris/git/FastChem/python/')
-
 from glob import glob
-import gc
 import numpy as np
 import astropy.units as u
 from astropy.constants import m_p, G

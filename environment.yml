@@ -3,5 +3,12 @@ channels:
   - conda-forge
 dependencies:
   - astropy
+  - numpy
+  - matplotlib
+  - xarray
   - pip:
     - pytest-astropy
+    - dask[distributed]
+    - specutils
+    - expecto
+    - tqdm

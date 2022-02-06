@@ -1,4 +1,3 @@
-import pyfastchem
 import numpy as np
 from astropy.constants import k_B, m_p, G, h, c
 import astropy.units as u
@@ -8,17 +7,19 @@ __all__ = [
 ]
 
 
-fastchem = pyfastchem.FastChem(
-    '/Users/brettmorris/git/FastChem/input/element_abundances_solar.dat', 
-    '/Users/brettmorris/git/FastChem/input/logK.dat', 1
-)
+def chemistry(temperatures, pressures, input_data=None, output_data=None, return_vmr=False, m_bar=2.4*m_p):
+    import pyfastchem
+    
+    if input_data is None and output_data is None: 
+        fastchem = pyfastchem.FastChem(
+            '/Users/brettmorris/git/FastChem/input/element_abundances_solar.dat', 
+            '/Users/brettmorris/git/FastChem/input/logK.dat', 1
+        )
 
-#create the input and output structures for FastChem
-input_data = pyfastchem.FastChemInput()
-output_data = pyfastchem.FastChemOutput()
+        #create the input and output structures for FastChem
+        input_data = pyfastchem.FastChemInput()
+        output_data = pyfastchem.FastChemOutput()
 
-
-def chemistry(temperatures, pressures, input_data=input_data, output_data=output_data, return_vmr=False, m_bar=2.4*m_p):
     
     input_data.temperature = temperatures.value
     input_data.pressure = pressures.to(u.bar).value

@@ -7,9 +7,8 @@ This is the documentation for frei.
    :maxdepth: 2
    :caption: Contents:
 
-   examples/install.rst
-   examples/bezier.rst
-
+   frei/index.rst
+   
 
 Indices and tables
 ==================
