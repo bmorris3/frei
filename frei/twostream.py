@@ -46,6 +46,9 @@ def E(omega_0, g_0):
     )
 
 def propagate_fluxes(lam, F_1_up, F_2_down, T_1, T_2, delta_tau, omega_0=0, g_0=0, eps=0.5):
+    """
+    Compute fluxes up and down using the improved two-stream equations.
+    """
     # Malik 2017 Equation 6
     #T = (1 - delta_tau) * np.exp(-delta_tau) + delta_tau**2 * exp1(delta_tau)
     
@@ -123,6 +126,9 @@ def rho_p(p_1, p_2, T_1, g, m_bar=2.4*m_p):
     return ((p_1 - p_2) / g) / delta_z_i(T_1, p_1, p_2, g, m_bar)
 
 def emit(opacities, temperatures, pressures, lam, F_TOA, g, m_bar=2.4*m_p, n_timesteps=50, plot=False):
+    """
+    Compute emission spectrum. 
+    """
     fluxes_upwards = []
     n_layers = len(pressures)
     # from bottom of the atmosphere

@@ -7,8 +7,14 @@ from astropy.visualization import quantity_support
 
 from .chemistry import chemistry
 
+__all__ = [
+    'dashboard'
+]
 
 def dashboard(lam, F_2_up, phoenix_lowres_padded, dtaus, pressures, temps, temperature_history):
+    """
+    Generate a dashboard plot.
+    """
     flux_unit = u.erg/u.cm**3/u.s
 
     fig = plt.figure(figsize=(10, 7))

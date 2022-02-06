@@ -22,6 +22,9 @@ __all__ = [
 ]
 
 def dask_client(memory_limit='20 GiB'):
+    """
+    Launch a local cluster, return the client.
+    """
     cluster = LocalCluster(
         memory_limit=memory_limit
     )
@@ -30,6 +33,9 @@ def dask_client(memory_limit='20 GiB'):
 
 
 def wavelength_grid(min_micron=0.5, max_micron=10, n_bins=500):
+    """
+    Compute a wavelength grid. 
+    """
     lam = np.logspace(np.log10(min_micron), np.log10(max_micron), n_bins) * u.um
     wl_bins = np.concatenate([
         [(lam.min() - (lam[1] - lam[0])).to(u.um).value], 
@@ -40,6 +46,9 @@ def wavelength_grid(min_micron=0.5, max_micron=10, n_bins=500):
 
 
 def F_TOA(lam, T_star=5800*u.K, f=2/3, a_rstar=float(0.03 * u.AU / u.R_sun)):
+    """
+    Compute the flux at the top of the atmosphere of the planet.
+    """
     return (f * a_rstar ** -2 * 
         1 / (2 * np.pi) * 
         (np.pi * B_star(T_star, lam))
@@ -47,10 +56,14 @@ def F_TOA(lam, T_star=5800*u.K, f=2/3, a_rstar=float(0.03 * u.AU / u.R_sun)):
 
 
 def B_star(T_star, lam):
+    """
+    Compute the blackbody spectrum of the star
+    """
     return BB(T_star)(lam)
 
 
 class Planet(object): 
+    """Container for planetary system information"""
     def __init__(self, a_rstar, m_bar, g, T_star): 
         self.a_rstar = a_rstar
         self.m_bar = m_bar
@@ -59,6 +72,9 @@ class Planet(object):
 
     @classmethod
     def from_hot_jupiter(cls):
+        """
+        Initialize a hot-Jupiter system with standard parameters
+        """
         g_jup = 1 * G * u.M_jup / u.R_jup**2
         return cls(
             a_rstar=float(0.03 * u.AU / u.R_sun), 
@@ -69,6 +85,9 @@ class Planet(object):
 
     
 class Grid(object): 
+    """
+    Grid over temperatures, pressures and wavelengths.
+    """
     def __init__(
         self, planet,
         # Wavelength grid:
@@ -78,6 +97,19 @@ class Grid(object):
         # Initial temperature grid:
         T_ref=2300 * u.K, P_ref = 0.1 * u.bar
     ):
+        """
+        Parameters
+        ----------
+        planet
+        min_micron
+        max_micron
+        n_wl_bins
+        n_layers
+        P_toa
+        P_boa
+        T_ref
+        P_ref
+        """
         self.planet = planet
         self.lam, self.wl_bins, self.R = wavelength_grid(
             min_micron=min_micron, max_micron=max_micron, n_bins=n_wl_bins
@@ -102,6 +134,9 @@ class Grid(object):
         )
     
     def load_opacities(self, path='tmp/*.nc', opacities=None, client=None):
+        """
+        Load opacity tables from path.
+        """
         if self.opacities is None and opacities is None:
             self.opacities = binned_opacity(
                 'tmp/*.nc', self.init_temperatures, 
@@ -111,6 +146,9 @@ class Grid(object):
             self.opacities = opacities
 
     def emission_spectrum(self, n_timesteps=50):
+        """
+        Compute the emission spectrum for this grid.
+        """
         if self.opacities is None:
             raise ValueError("Must load opacities before computing emission spectrum.")
         
@@ -131,7 +169,9 @@ class Grid(object):
         )
     
     def emission_dashboard(self, spec, final_temps, temperature_history, dtaus, T_eff=2400*u.K):
-        
+        """
+        Produce the "daskboard" plot.
+        """
         phoenix_lowres_padded = get_binned_phoenix_spectrum(
             T_eff, self.planet.g, self.wl_bins, self.lam
         )

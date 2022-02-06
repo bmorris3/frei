@@ -51,7 +51,9 @@ def delayed_map_exact_concat(grouped, temperatures, pressures, lam, client):
 def binned_opacity(
     path, temperatures, pressures, wl_bins, lam, client
 ):
-    # path = 'tmp/*.nc'
+    """
+    Compute opacity for all available species, binned to wavelengths lam.
+    """
     if len(set(temperatures)) == 1: 
         # uniform temperature submitted, draw temperature grid from this temperature grid: 
         temperatures = np.linspace(500, 4000, len(pressures))[::-1] * u.K
@@ -102,6 +104,9 @@ def kappa(
     lam, 
     m_bar=2.4*m_p
 ): 
+    """
+    Return the opacity at a given temperature and pressure.
+    """
     sigma_scattering = rayleigh_H2(lam, m_bar) + rayleigh_He(lam, m_bar)
     ops = [sigma_scattering]
     interp_kwargs = dict(

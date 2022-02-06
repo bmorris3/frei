@@ -8,6 +8,9 @@ __all__ = [
 
 
 def chemistry(temperatures, pressures, input_data=None, output_data=None, return_vmr=False, m_bar=2.4*m_p):
+    """
+    Run pyfastchem to compute chemistry throughout an atmosphere.
+    """
     import pyfastchem
     
     if input_data is None and output_data is None: 

@@ -37,6 +37,9 @@ def resolution(group):
                         ), name='opacity')
 
 def get_binned_phoenix_spectrum(T_eff, g, wl_bins, lam):
+    """
+    Return a binned PHOENIX spectrum with effective temperature T_eff.
+    """
     spec = get_spectrum(T_eff.value, log_g=np.log10(g.cgs.value), cache=True)
     phoenix_xr = xr.DataArray(
         spec.flux.to(flux_unit).value, dims=['wavelength'],
