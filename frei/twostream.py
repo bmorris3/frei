@@ -3,6 +3,8 @@ import numpy as np
 import astropy.units as u
 from astropy.constants import k_B, m_p, G, h, c, sigma_sb
 
+from .opacity import kappa
+
 __all__ = [
     'propagate_fluxes', 
     'emit'
@@ -13,8 +15,8 @@ flux_unit = u.erg / u.s / u.cm**3
 def bolometric_flux(flux, lam): 
     return flux.to(flux_unit * u.cm, u.spectral_density(lam)).sum()
 
-def delta_t_i(p_1, p_2, T_1, delta_F_i_dz, g):
-    dz = delta_z_i(T_1, p_1, p_2)
+def delta_t_i(p_1, p_2, T_1, delta_F_i_dz, g, m_bar=2.4*m_p):
+    dz = delta_z_i(T_1, p_1, p_2, g, m_bar)
     # Malik 2017 Eqn 28
     #f_i_pre = 1e5 / (abs(delta_F_i_dz * dz) / (u.erg/u.cm**2/u.s))**0.9
     f_i_pre = 2e5 / (abs(delta_F_i_dz * dz) / (u.erg/u.cm**2/u.s))**0.9
@@ -43,7 +45,7 @@ def E(omega_0, g_0):
         1
     )
 
-def propagate_fluxes(lam, F_1_up, F_2_down, T_1, T_2, delta_tau, omega_0=0., g_0=0, eps=0.5):
+def propagate_fluxes(lam, F_1_up, F_2_down, T_1, T_2, delta_tau, omega_0=0, g_0=0, eps=0.5):
     # Malik 2017 Equation 6
     #T = (1 - delta_tau) * np.exp(-delta_tau) + delta_tau**2 * exp1(delta_tau)
     
@@ -87,14 +89,14 @@ def propagate_fluxes(lam, F_1_up, F_2_down, T_1, T_2, delta_tau, omega_0=0., g_0
     )
     return F_2_up, F_1_down
 
-def delta_z_i(temperature_i, pressure_i, pressure_ip1, m_bar, g): 
+def delta_z_i(temperature_i, pressure_i, pressure_ip1, g, m_bar=2.4*m_p): 
     return (k_B * temperature_i) / (m_bar * g) * np.log(pressure_i / pressure_ip1)
 
-def div_bol_net_flux(F_ip1_u, F_ip1_d, F_i_u, F_i_d, temperature_i, pressure_i, pressure_ip1):
+def div_bol_net_flux(F_ip1_u, F_ip1_d, F_i_u, F_i_d, temperature_i, pressure_i, pressure_ip1, g, m_bar=2.4*m_p):
     # Malik 2017 Eqn 23
     return (
         (F_ip1_u - F_ip1_d) - (F_i_u - F_i_d)
-    ) / delta_z_i(temperature_i, pressure_i, pressure_ip1)
+    ) / delta_z_i(temperature_i, pressure_i, pressure_ip1, g, m_bar)
 
 def delta_temperature(div, p_1, p_2, T_1, delta_t_i, g, m_bar=2.4 * m_p, n_dof=5):
     """
@@ -117,14 +119,13 @@ def c_p(m_bar=2.4 * m_p, n_dof=5):
 def delta_tau_i(kappa_i, p_1, p_2, g):
     return (p_1 - p_2) / g * kappa_i
 
-def rho_p(p_1, p_2, T_1, g):
-    return ((p_1 - p_2) / g) / delta_z_i(T_1, p_1, p_2)
+def rho_p(p_1, p_2, T_1, g, m_bar=2.4*m_p):
+    return ((p_1 - p_2) / g) / delta_z_i(T_1, p_1, p_2, g, m_bar)
 
-def emit(n_layers, n_timesteps, temperatures, pressures, lam):
+def emit(opacities, temperatures, pressures, lam, F_TOA, g, m_bar=2.4*m_p, n_timesteps=50, plot=False):
     fluxes_upwards = []
-
+    n_layers = len(pressures)
     # from bottom of the atmosphere
-    n_timesteps = 50  # (max)
     temperature_history = np.zeros((n_layers, n_timesteps)) * u.K
     temperature_history[:, 0] = temperatures.copy()
 
@@ -166,9 +167,7 @@ def emit(n_layers, n_timesteps, temperatures, pressures, lam):
                 F_1_up = F_2_up
                 F_2_down = F_TOA
             k, sigma_scattering = kappa(
-                lam, 
-                temperature=T_1,
-                pressure=p_1
+                opacities, T_1, p_1, lam, m_bar
             )
 
             # Single scattering albedo, Deitrick (2020) Eqn 17
@@ -176,7 +175,7 @@ def emit(n_layers, n_timesteps, temperatures, pressures, lam):
                 sigma_scattering / (sigma_scattering + k)
             ).to(u.dimensionless_unscaled).value
 
-            delta_tau = delta_tau_i(k, p_1, p_2).to(u.dimensionless_unscaled).value
+            delta_tau = delta_tau_i(k, p_1, p_2, g).to(u.dimensionless_unscaled).value
             dtaus.append(delta_tau)
 
             F_2_up, F_1_down = propagate_fluxes(
@@ -187,13 +186,13 @@ def emit(n_layers, n_timesteps, temperatures, pressures, lam):
             )
 
             delta_F_i_dz = div_bol_net_flux(
-                bolometric_flux(F_2_up), bolometric_flux(F_2_down), 
-                bolometric_flux(F_1_up), bolometric_flux(F_1_down), 
-                T_1, p_1, p_2,
+                bolometric_flux(F_2_up, lam), bolometric_flux(F_2_down, lam), 
+                bolometric_flux(F_1_up, lam), bolometric_flux(F_1_down, lam), 
+                T_1, p_1, p_2, g
             )
-            dt = delta_t_i(p_1, p_2, T_1, delta_F_i_dz)
+            dt = delta_t_i(p_1, p_2, T_1, delta_F_i_dz, g)
             temperature_changes[i] = delta_temperature(
-                delta_F_i_dz, p_1, p_2, T_1, dt
+                delta_F_i_dz, p_1, p_2, T_1, dt, g
             ).decompose()
 
         temperature_history[:, j] = temps
@@ -205,6 +204,9 @@ def emit(n_layers, n_timesteps, temperatures, pressures, lam):
             break
 
     if plot: 
+        from astropy.visualize import quantity_support
+        import matplotlib.pyplot as plt
+        
         fig, ax = plt.subplots(1, 2, figsize=(15, 5))
         with quantity_support():
             ax[0].loglog(lam, F_2_up.to(flux_unit), label=p_1)
@@ -216,4 +218,4 @@ def emit(n_layers, n_timesteps, temperatures, pressures, lam):
             ax[1].invert_yaxis();
 
         plt.legend(loc=(1, 0))
-    return F_2_up, temps, temperature_history
+    return F_2_up, temps, temperature_history, dtaus

@@ -1,4 +1,5 @@
 import numpy as np
+import xarray as xr
 import astropy.units as u
 from astropy.constants import k_B, m_p, G, h, c, sigma_sb
 from expecto import get_spectrum
@@ -35,8 +36,8 @@ def resolution(group):
                             wavelength=[wl_values.mean()],
                         ), name='opacity')
 
-def get_binned_phoenix_spectrum(temperature, g):
-    spec = get_spectrum(temperature.value, log_g=np.log10(g.cgs.value), cache=True)
+def get_binned_phoenix_spectrum(T_eff, g, wl_bins, lam):
+    spec = get_spectrum(T_eff.value, log_g=np.log10(g.cgs.value), cache=True)
     phoenix_xr = xr.DataArray(
         spec.flux.to(flux_unit).value, dims=['wavelength'],
         coords=dict(wavelength=spec.wavelength.to(u.um).value)
@@ -44,3 +45,4 @@ def get_binned_phoenix_spectrum(temperature, g):
     phoenix_groups = phoenix_xr.groupby_bins("wavelength", wl_bins)
     phoenix_lowres = phoenix_groups.map(resolution)
     phoenix_lowres_padded = np.pad(phoenix_lowres, (0, len(lam) - phoenix_lowres.shape[0]))
+    return phoenix_lowres_padded

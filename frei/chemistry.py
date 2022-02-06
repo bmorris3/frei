@@ -1,7 +1,7 @@
 import pyfastchem
 import numpy as np
 from astropy.constants import k_B, m_p, G, h, c
-
+import astropy.units as u
 
 __all__ = [
     'chemistry'
@@ -18,7 +18,7 @@ input_data = pyfastchem.FastChemInput()
 output_data = pyfastchem.FastChemOutput()
 
 
-def chemistry(temperatures, pressures, input_data=input_data, output_data=output_data, return_vmr=False):
+def chemistry(temperatures, pressures, input_data=input_data, output_data=output_data, return_vmr=False, m_bar=2.4*m_p):
     
     input_data.temperature = temperatures.value
     input_data.pressure = pressures.to(u.bar).value

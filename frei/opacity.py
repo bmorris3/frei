@@ -7,13 +7,12 @@ import dask
 import dask.array as da
 from dask.delayed import delayed
 
+from .chemistry import chemistry
+
 __all__ = [
     'binned_opacity',
     'kappa'
 ]
-
-m_bar = 2.4 * m_p
-
 
 interp_kwargs = dict(
     method='nearest', 
@@ -82,32 +81,35 @@ n_ref_H2 = 2.68678e19 * u.cm**-3
 n_ref_He = 2.546899e19 * u.cm**-3
 K_lambda = 1
 # Malik 2017 Eqn 16
-rayleigh_H2 = lambda wavelength: ((
-    24 * np.pi**3 / n_ref_H2**2 / wavelength**4 *
-    ((n_lambda_H2(wavelength)**2 - 1) / 
-     (n_lambda_H2(wavelength)**2 + 2))**2 * K_lambda
-) / m_bar).decompose()
 
-rayleigh_He = lambda wavelength: ((
-    24 * np.pi**3 / n_ref_He**2 / wavelength**4 *
-    ((n_lambda_He(wavelength)**2 - 1) / 
-     (n_lambda_He(wavelength)**2 + 2))**2 * K_lambda
-) / m_bar).decompose()
+def rayleigh_H2(wavelength, m_bar=2.4*m_p): 
+    return ((24 * np.pi**3 / n_ref_H2**2 / wavelength**4 *
+        ((n_lambda_H2(wavelength)**2 - 1) / 
+         (n_lambda_H2(wavelength)**2 + 2))**2 * K_lambda
+    ) / m_bar).decompose()
+
+def rayleigh_He(wavelength, m_bar=2.4*m_p): 
+    return ((24 * np.pi**3 / n_ref_He**2 / wavelength**4 *
+        ((n_lambda_He(wavelength)**2 - 1) / 
+         (n_lambda_He(wavelength)**2 + 2))**2 * K_lambda
+    ) / m_bar).decompose()
 
 
 def kappa(
-    wavelength, temperature, 
+    opacities,
+    temperature, 
     pressure, 
     lam, 
+    m_bar=2.4*m_p
 ): 
-    sigma_scattering = rayleigh_H2(lam) + rayleigh_He(lam)
+    sigma_scattering = rayleigh_H2(lam, m_bar) + rayleigh_He(lam, m_bar)
     ops = [sigma_scattering]
     interp_kwargs = dict(
         method='linear', 
         kwargs=dict(fill_value='extrapolate')
     )
     
-    fastchem_mmr = chemistry(u.Quantity([temperature]), u.Quantity([pressure]))
+    fastchem_mmr = chemistry(u.Quantity([temperature]), u.Quantity([pressure]), m_bar=m_bar)
     
     for species in opacities: 
         ops.append(
