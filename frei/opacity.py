@@ -61,6 +61,21 @@ def binned_opacity(
 ):
     """
     Compute opacity for all available species, binned to wavelengths lam.
+
+    Parameters
+    ----------
+    path : str
+        Path passed to ~glob.glob to find opacity netCDF files.
+    temperatures : ~astropy.units.Quantity
+        Temperature grid
+    pressures : ~astropy.units.Quantity
+        Pressure grid
+    wl_bins : ~astropy.units.Quantity
+        Wavelength bin edges
+    lam : ~astropy.units.Quantity
+        Wavelength bin centers
+    client : None or ~dask.distributed.client.Client
+        Client for distributed dask computation on opacity tables
     """
     if len(set(temperatures)) == 1: 
         # uniform temperature submitted, draw temperature grid from this temperature grid: 
@@ -100,11 +115,13 @@ n_ref_He = 2.546899e19 * u.cm**-3
 K_lambda = 1
 # Malik 2017 Eqn 16
 
+
 def rayleigh_H2(wavelength, m_bar=2.4*m_p): 
     return ((24 * np.pi**3 / n_ref_H2**2 / wavelength**4 *
         ((n_lambda_H2(wavelength)**2 - 1) / 
          (n_lambda_H2(wavelength)**2 + 2))**2 * K_lambda
     ) / m_bar).decompose()
+
 
 def rayleigh_He(wavelength, m_bar=2.4*m_p): 
     return ((24 * np.pi**3 / n_ref_He**2 / wavelength**4 *
@@ -122,6 +139,24 @@ def kappa(
 ): 
     """
     Return the opacity at a given temperature and pressure.
+
+    Parameters
+    ----------
+    temperature : ~astropy.units.Quantity
+        Temperature value
+    pressure : ~astropy.units.Quantity
+        Pressure value
+    lam : ~astropy.units.Quantity
+        Wavelength bin centers
+    m_bar : ~astropy.units.Quantity
+        Mean molecular weight
+
+    Returns
+    -------
+    k : ~astropy.units.Quantity
+        Sum of opacities over all species
+    sigma_scattering : ~astropy.units.Quantity
+        Scattering cross section
     """
     sigma_scattering = rayleigh_H2(lam, m_bar) + rayleigh_He(lam, m_bar)
     ops = [sigma_scattering]

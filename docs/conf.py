@@ -58,18 +58,20 @@ master_doc = 'index'
 intersphinx_mapping = {
     'https://docs.python.org/': None,
     'specutils': ('https://specutils.readthedocs.io/en/stable/', None),
-    'numpy': ('http://docs.scipy.org/doc/numpy/', None),
-    'scipy': ('http://docs.scipy.org/doc/scipy/reference/', None),
+    'numpy': ('https://numpy.org/doc/stable/', None),
     'matplotlib': ('http://matplotlib.org/stable', None),
-    'astropy' : ('https://docs.astropy.org/en/stable/', None)
+    'astropy': ('https://docs.astropy.org/en/stable/', None)
 }
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = 'alabaster'
+html_theme = 'sphinx_book_theme'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 # html_static_path = ['_static']
+
+# Include __init__ method parameters in docs:
+autoclass_content = 'both'

@@ -1,45 +1,13 @@
 import numpy as np
 import xarray as xr
 import astropy.units as u
-from astropy.constants import k_B, m_p, G, h, c, sigma_sb
 from expecto import get_spectrum
 
 from .twostream import flux_unit
 
 __all__ = [
-    'emission_to_teff',
     'get_binned_phoenix_spectrum'
 ]
-
-
-def emission_to_teff(F_2_up, lam, offset=250 * u.K):
-    """
-    Effective temperature from emission spectrum.
-
-    Parameters
-    ----------
-    F_2_up : ~astropy.units.Quantity
-        Spectrum
-    lam : ~astropy.units.Quantity
-        Wavelength array
-    offset : ~astropy.units.Quantity
-        Constant offset
-
-    Returns
-    -------
-    temp : ~astropy.units.Quantity
-        Effective temperature
-    """
-    bbtemp = (
-        (F_2_up.to(u.erg/u.s/u.cm**2, u.spectral_density(lam))
-         / sigma_sb)**(1/4)
-    ).decompose()
-
-    retrieve_phoenix_temperature = np.average(
-        bbtemp, weights=F_2_up.value
-    ) + offset
-
-    return retrieve_phoenix_temperature
 
 
 def resolution(group):

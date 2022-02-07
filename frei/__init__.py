@@ -8,5 +8,4 @@ from .opacity import *  # noqa
 from .phoenix import *  # noqa
 from .tp import *  # noqa
 from .twostream import *  # noqa
-from .interp import *  # noqa
 from .plot import *  # noqa

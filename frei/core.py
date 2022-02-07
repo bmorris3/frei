@@ -1,6 +1,6 @@
 import numpy as np
 import astropy.units as u
-from astropy.constants import m_p, G
+from astropy.constants import m_p, G, sigma_sb
 from specutils import Spectrum1D
 from dask.distributed import Client, LocalCluster
 
@@ -14,7 +14,8 @@ from .twostream import emit
 __all__ = [
     'dask_client',
     'Grid', 
-    'Planet', 
+    'Planet',
+    'effective_temperature'
 ]
 
 def dask_client(memory_limit='20 GiB'):
@@ -86,7 +87,7 @@ class Planet(object):
     def from_hot_jupiter(cls):
         """
         Initialize a hot-Jupiter system with standard parameters:
-        :math:`M=M_J`, :math:`R=R_J`, :math:`\mu=2.4`, :math:`g=g_J`,
+        :math:`M=M_J`, :math:`R=R_J`, :math:`\bar{m}=2.4`, :math:`g=g_J`,
         :math:`T_\mathrm{eff}=5800` K.
         """
         g_jup = 1 * G * u.M_jup / u.R_jup**2
@@ -176,6 +177,11 @@ class Grid(object):
             object with this keyword argument.
         client : None or ~dask.distributed.client.Client
             Client for distributed dask computation on opacity tables
+
+        Returns
+        -------
+        opacities : dict
+            Opacity dictionary of xarray.DataArray's
         """
         if self.opacities is None and opacities is None:
             self.opacities = binned_opacity(
@@ -184,6 +190,8 @@ class Grid(object):
             )
         else: 
             self.opacities = opacities
+
+        return self.opacities
 
     def emission_spectrum(self, n_timesteps=50):
         """
@@ -198,11 +206,11 @@ class Grid(object):
         -------
         spec : specutils.Spectrum1D
             Emission spectrum
-        final_temps : ~astropy.units.Quantity
+        final_temps : astropy.units.Quantity
             Final temperature grid
-        temperature_history : ~astropy.units.Quantity
+        temperature_history : astropy.units.Quantity
             Grid of temperatures with dimensions (n_layers, n_timesteps)
-        dtaus : ~numpy.ndarray
+        dtaus : numpy.ndarray
             Change in optical depth in final iteration
         """
         if self.opacities is None:
@@ -225,25 +233,32 @@ class Grid(object):
         )
     
     def emission_dashboard(self, spec, final_temps, temperature_history, dtaus,
-                           T_eff=2400*u.K):
+                           T_eff=None):
         """
-        Produce the "daskboard" plot with the outputs from ``emit``.
+        Produce the "dashboard" plot with the outputs from ``emission_spectrum``.
 
         Parameters
         ----------
-        spec : specutils.Spectrum1D
+        spec : ~specutils.Spectrum1D
             Emission spectrum
         final_temps : ~astropy.units.Quantity
             Final temperature grid
         temperature_history : ~astropy.units.Quantity
             Grid of temperatures with dimensions (n_layers, n_timesteps)
-        dtaus : ~numpy.ndarray
+        dtaus : ~np.ndarray
             Change in optical depth in final iteration
+        T_eff : ~astropy.units.Quantity or None
+            If not None, give the effective temperature of the PHOENIX model
+            to plot in comparison, otherwise compute it on the fly.
+
         Returns
         -------
         fig, ax
             Matplotlib figure and axis objects.
         """
+        if T_eff is None:
+            T_eff = effective_temperature(self, spec, dtaus, final_temps)
+
         phoenix_lowres_padded = get_binned_phoenix_spectrum(
             T_eff, self.planet.g, self.wl_bins, self.lam
         )
@@ -254,3 +269,59 @@ class Grid(object):
         )
         
         return fig, ax
+
+
+def effective_temperature_milne(grid, spec, dtaus, final_temps):
+    """
+    Estimate photosphere temperature from Milne's solution (tau ~ 2/3).
+    """
+    pressure_milne = np.ones_like(grid.lam.value)
+
+    for i in range(dtaus.shape[1]):
+        pressure_milne[i] = np.interp(
+            2/3, np.exp(-dtaus[:, i]), grid.pressures
+        ).to(u.bar).value
+
+    temperature_milne = np.interp(
+        np.average(
+            pressure_milne,
+            weights=spec.flux.to(u.erg/u.s/u.cm**2,
+                                 u.spectral_density(grid.lam)).value
+        ),
+        grid.pressures[::-1].to(u.bar).value, final_temps[::-1]
+    )
+    return temperature_milne
+
+
+def effective_temperature_planck(grid, spec):
+    """
+    Use the Stefan-Boltzmann law to invert the emitted flux for the
+    effective temperature.
+    """
+    bol_flux = np.trapz(spec.flux, grid.lam)
+    return ((bol_flux / sigma_sb) ** (1/4)).decompose()
+
+
+def effective_temperature(grid, spec, dtaus, final_temps):
+    """
+    Compute effective temperature of an atmosphere given the outputs
+    from ``emit``.
+
+    This is the mean of the effective temperatures computed from
+    Milne's solution and the Stefan-Boltzmann law.
+
+    Parameters
+    ----------
+    grid : ~frei.Grid
+        Wavelength, pressure and temperature grid
+    spec : ~specutils.Spectrum1D
+        Emission spectrum
+    dtaus : ~numpy.ndarray
+        Change in optical depth in final iteration
+    final_temps : ~astropy.units.Quantity
+        Temperature grid in the final iteration
+    """
+    return u.Quantity([
+        effective_temperature_milne(grid, spec, dtaus, final_temps),
+        effective_temperature_planck(grid, spec)
+    ]).mean()

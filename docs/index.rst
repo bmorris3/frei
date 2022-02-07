@@ -7,6 +7,7 @@ This is the documentation for frei.
    :maxdepth: 2
    :caption: Contents:
 
+   frei/install.rst
    frei/index.rst
    
 
