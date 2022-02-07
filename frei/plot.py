@@ -78,7 +78,9 @@ def dashboard(
     ax[1].set_yscale('log')
     ax[1].invert_yaxis()
     ax[1].set(
-        xlabel='Wavelength [$\mu$m]', ylabel='Pressure [bar]', title='Contrib Func'
+        xlabel='Wavelength [$\mu$m]', ylabel='Pressure [bar]', title='Contrib Func', 
+        xlim=[lam.value.min(), lam.value.max()], 
+        ylim=[pressures.value.max(), pressures.value.min()]
     )
     ax[0].set(
         xlabel='Wavelength [$\mu$m]', title='Emission spectrum', 

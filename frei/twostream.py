@@ -275,14 +275,14 @@ def emit(
     """
     n_layers = len(pressures)
     # from bottom of the atmosphere
+    temperature_history = np.zeros((n_layers, n_timesteps + 1)) * u.K
+    temperature_history[:, 0] = temperatures.copy()
 
     if n_timesteps > 1:
-        timestep_iterator = tqdm(np.arange(n_timesteps - 1))
-        temperature_history = np.zeros((n_layers, n_timesteps)) * u.K
-        temperature_history[:, 0] = temperatures.copy()
+        timestep_iterator = tqdm(np.arange(n_timesteps))
+
     else:
-        timestep_iterator = np.arange(1)
-        temperature_history = temperatures.copy()[None, :]
+        timestep_iterator = np.arange(n_timesteps)
 
     for j in timestep_iterator:
         dtaus = []
@@ -355,9 +355,9 @@ def emit(
             dT = u.Quantity(temperature_changes)
             temperature_history[:, j+1] = temps - dT
 
-        # Stop iterating if T-p profile changes by <10 K
-        if np.abs(dT).max() < convergence_thresh:
-            break
+            # Stop iterating if T-p profile changes by <10 K
+            if np.abs(dT).max() < convergence_thresh:
+                break
 
     if plot: 
         from astropy.visualize import quantity_support

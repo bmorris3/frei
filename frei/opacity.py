@@ -9,7 +9,8 @@ from .chemistry import chemistry
 
 __all__ = [
     'binned_opacity',
-    'kappa'
+    'kappa',
+    'load_example_opacity'
 ]
 
 interp_kwargs = dict(
@@ -76,6 +77,11 @@ def binned_opacity(
         Wavelength bin centers
     client : None or ~dask.distributed.client.Client
         Client for distributed dask computation on opacity tables
+    
+    Returns
+    -------
+    op : dict
+        Opacity tables for each species
     """
     if len(set(temperatures)) == 1: 
         # uniform temperature submitted, draw temperature grid from this temperature grid: 
@@ -178,3 +184,46 @@ def kappa(
         )
 
     return u.Quantity(ops).sum(axis=0), sigma_scattering
+
+
+def load_example_opacity(grid):
+    """
+    Load "example" opacity xarray. 
+    
+    This file function returns something compatible with 
+    the output of ``binned_opacity``, so fake data can be 
+    substituted for the real opacities during testing and 
+    in the documentaiton.
+    
+    Parameters
+    ----------
+    grid : ~frei.Grid
+        Grid object
+        
+    Returns
+    -------
+    op : dict
+        Opacity tables for each species
+    """
+    simple_opacities = np.zeros((grid.pressures.shape[0], grid.init_temperatures.shape[0], grid.lam.shape[0]))
+
+    so = (
+        np.exp(-0.5 * (grid.lam - 4 * u.um)**2 / (2 * u.um)**2) + 
+        0.8 * np.exp(-0.5 * (grid.lam - 0.5 * u.um)**2 / (0.5 * u.um)**2) + 
+        np.exp(-0.5 * (grid.lam - 1.1 * u.um)**2 / (0.02 * u.um)**2)
+    )
+
+    simple_opacities[:] += 10**(2 * (so.value - 0.4))
+    
+    # Save this fake opacity grid to the water key in the opacity dictionary
+    op = dict(H2O = xr.DataArray(
+        simple_opacities, 
+        dims=['pressure', 'temperature', 'wavelength'], 
+        coords=dict(
+            pressure=grid.pressures, 
+            temperature=grid.init_temperatures, 
+            wavelength=grid.lam.to(u.um).value
+        )
+    ))
+    
+    return op
