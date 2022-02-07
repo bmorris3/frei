@@ -174,8 +174,7 @@ def kappa(
     fastchem_mmr = chemistry(
         u.Quantity([temperature]), u.Quantity([pressure]), m_bar=m_bar
     )
-    
-    for species in opacities: 
+    for species in opacities:
         ops.append(
             fastchem_mmr[species] * opacities[species].interp(
                 dict(temperature=temperature.value,

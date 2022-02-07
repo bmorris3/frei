@@ -360,7 +360,7 @@ def emit(
                 break
 
     if plot: 
-        from astropy.visualize import quantity_support
+        from astropy.visualization import quantity_support
         import matplotlib.pyplot as plt
         
         fig, ax = plt.subplots(1, 2, figsize=(15, 5))

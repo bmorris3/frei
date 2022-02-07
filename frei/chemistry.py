@@ -9,8 +9,7 @@ __all__ = [
 
 
 def chemistry(
-        temperatures, pressures, fastchem=None, input_data=None,
-        output_data=None, return_vmr=False, m_bar=2.4*m_p
+        temperatures, pressures, return_vmr=False, m_bar=2.4*m_p
 ):
     """
     Run pyfastchem to compute chemistry throughout an atmosphere.
@@ -37,23 +36,32 @@ def chemistry(
     fastchem_vmr : dict (optional)
         Volume mixing ratios for each species
     """
-    import pyfastchem
-    
-    if input_data is None and output_data is None and fastchem is None:
-        fastchem = pyfastchem.FastChem(
-            os.path.join(
-                os.path.dirname(__file__), 'data',
-                'element_abundances_solar.dat'
-            ),
-            os.path.join(
-                os.path.dirname(__file__), 'data', 'logK.dat'
-            ), 1
+    # If pyfastchem is not installed, mock it:
+    try:
+        from pyfastchem import (
+            FastChem, FastChemInput, FastChemOutput, FASTCHEM_UNKNOWN_SPECIES
         )
+    except ImportError:
+        FastChem = Mock_FastChem
+        FastChemInput = Mock_FastChemInput
+        FastChemOutput = mock_fastchem_output(
+            temperatures, pressures
+        )
+        FASTCHEM_UNKNOWN_SPECIES = 9999999
 
-        #create the input and output structures for FastChem
-        input_data = pyfastchem.FastChemInput()
-        output_data = pyfastchem.FastChemOutput()
+    fastchem = FastChem(
+        os.path.join(
+            os.path.dirname(__file__), 'data',
+            'element_abundances_solar.dat'
+        ),
+        os.path.join(
+            os.path.dirname(__file__), 'data', 'logK.dat'
+        ), 1
+    )
 
+    #create the input and output structures for FastChem
+    input_data = FastChemInput()
+    output_data = FastChemOutput()
     
     input_data.temperature = temperatures.value
     input_data.pressure = pressures.to(u.bar).value
@@ -62,6 +70,7 @@ def chemistry(
     fastchem_flag = fastchem.calcDensities(input_data, output_data)
 
     n_densities = np.array(output_data.number_densities) / u.cm**3
+
     gas_number_density = pressures / (k_B * temperatures)
     # Hill notation, common spelling, mass
     all_species = [
@@ -76,7 +85,7 @@ def chemistry(
     fastchem_mmr = dict()
     for i, (species_name_hill, species_name, mass) in enumerate(all_species):
         index = fastchem.getSpeciesIndex(species_name_hill)
-        if index != pyfastchem.FASTCHEM_UNKNOWN_SPECIES:
+        if index != FASTCHEM_UNKNOWN_SPECIES:
             if return_vmr:
                 fastchem_vmr[species_name] = (
                     n_densities[:, index] / gas_number_density
@@ -89,6 +98,47 @@ def chemistry(
         else:
             print("Species", species_name, "not found in FastChem")
 
-    if return_vmr: 
+    if return_vmr:
         return fastchem_mmr, fastchem_vmr
     return fastchem_mmr
+
+# Mocking machinery for when pyfastchem is not installed (useful for tests)
+
+
+class Mock_pyfastchem(object):
+    def __init__(self):
+        pass
+
+
+class Mock_FastChem(object):
+    def __init__(self, *args):
+        pass
+
+    def calcDensities(self, input, output):
+        return 0
+
+    def getSpeciesIndex(self, species_name):
+        return 0
+
+
+class Mock_FastChemInput(object):
+    def __init__(self):
+        self.temperature = None
+        self.pressure = None
+
+
+def mock_fastchem_output(temperatures, pressures):
+
+    class Mock_FastChemOutput(object):
+        def __init__(self):
+            self.temperatures = temperatures
+            self.pressures = pressures
+
+        @property
+        def number_densities(self):
+            gas_number_density = self.pressures / (k_B * self.temperatures)
+            return (
+                1.5e-3 * gas_number_density[:, None]
+            ).to(u.cm**-3).value
+
+    return Mock_FastChemOutput

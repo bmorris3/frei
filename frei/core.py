@@ -233,7 +233,7 @@ class Grid(object):
         )
     
     def emission_dashboard(self, spec, final_temps, temperature_history, dtaus,
-                           T_eff=None):
+                           T_eff=None, plot_phoenix=False, cache=False):
         """
         Produce the "dashboard" plot with the outputs from ``emission_spectrum``.
 
@@ -250,7 +250,10 @@ class Grid(object):
         T_eff : ~astropy.units.Quantity or None
             If not None, give the effective temperature of the PHOENIX model
             to plot in comparison, otherwise compute it on the fly.
-
+        plot_phoenix : bool
+            If True, plot the corresponding PHOENIX model
+        cache : bool
+            Cache the PHOENIX model spectrum if ``plot_phoenix`` is True.
         Returns
         -------
         fig, ax
@@ -259,9 +262,13 @@ class Grid(object):
         if T_eff is None:
             T_eff = effective_temperature(self, spec, dtaus, final_temps)
 
-        phoenix_lowres_padded = get_binned_phoenix_spectrum(
-            T_eff, self.planet.g, self.wl_bins, self.lam
-        )
+        if plot_phoenix:
+            phoenix_lowres_padded = get_binned_phoenix_spectrum(
+                T_eff, self.planet.g, self.wl_bins, self.lam, cache=cache
+            )
+        else:
+            flux_unit = u.erg/u.cm**3/u.s
+            phoenix_lowres_padded = np.zeros(len(self.lam)) * flux_unit
         
         fig, ax = dashboard(
             self.lam, spec.flux, phoenix_lowres_padded, dtaus, 

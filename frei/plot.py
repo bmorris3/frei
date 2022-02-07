@@ -48,10 +48,11 @@ def dashboard(
           for ax in [gs[0, :], gs[1, 0], gs[1, 1], gs[1, 2]]]
 
     with quantity_support():
-        ax[0].loglog(
-            lam, binned_phoenix_spectrum, color='C1', label='PHOENIX'
-        )
-        ax[0].semilogx(lam, F_2_up, color='C0', label='frei')
+        if np.any(binned_phoenix_spectrum.value != 0):
+            ax[0].loglog(
+                lam, binned_phoenix_spectrum, color='C1', label='PHOENIX'
+            )
+        ax[0].loglog(lam, F_2_up.to(flux_unit), color='C0', label='frei')
 
     ax[0].legend()
     tau = np.cumsum(dtaus[::-1], axis=0)
@@ -78,13 +79,14 @@ def dashboard(
     ax[1].set_yscale('log')
     ax[1].invert_yaxis()
     ax[1].set(
-        xlabel='Wavelength [$\mu$m]', ylabel='Pressure [bar]', title='Contrib Func', 
+        xlabel='Wavelength [$\mu$m]', ylabel='Pressure [bar]',
+        title='Contrib Func',
         xlim=[lam.value.min(), lam.value.max()], 
         ylim=[pressures.value.max(), pressures.value.min()]
     )
     ax[0].set(
         xlabel='Wavelength [$\mu$m]', title='Emission spectrum', 
-        ylim=[8e10, 3e13], xlim=[0.5, 10]
+        #ylim=[8e10, 3e13], xlim=[0.5, 10]
     )
     ax[1].set_xscale('log')
 
@@ -104,11 +106,12 @@ def dashboard(
     )
 
     fastchem_mmr, fastchem_vmr = chemistry(
-        temps[:-1], pressures[:-1], return_vmr=True
+        temps[:-1][::-1], pressures[:-1][::-1], return_vmr=True
     )
+
     for species in fastchem_vmr:
         ax[3].semilogy(
-            np.log10(fastchem_vmr[species]), pressures[:-1], 
+            np.log10(fastchem_vmr[species]), pressures[:-1],
             label=species.replace('2', '$_2$'), lw=2
         )
     ax[3].legend()
