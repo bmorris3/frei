@@ -39,10 +39,15 @@ def chemistry(
     """
     import pyfastchem
     
-    if input_data is None and output_data is None: 
+    if input_data is None and output_data is None and fastchem is None:
         fastchem = pyfastchem.FastChem(
-            os.path.join('data', 'element_abundances_solar.dat'),
-            os.path.join('data', 'logK.dat'), 1
+            os.path.join(
+                os.path.dirname(__file__), 'data',
+                'element_abundances_solar.dat'
+            ),
+            os.path.join(
+                os.path.dirname(__file__), 'data', 'logK.dat'
+            ), 1
         )
 
         #create the input and output structures for FastChem
@@ -82,7 +87,7 @@ def chemistry(
                 mass * m_p / m_bar
             ).to(u.dimensionless_unscaled).value
         else:
-            print("Species", species_name, " not found in FastChem")
+            print("Species", species_name, "not found in FastChem")
 
     if return_vmr: 
         return fastchem_mmr, fastchem_vmr

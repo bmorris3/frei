@@ -10,7 +10,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'frei'
-copyright = '2021, Brett M. Morris'
+copyright = '2022, Brett M. Morris'
 author = 'Brett M. Morris'
 
 # The full version, including alpha/beta/rc tags
@@ -55,8 +55,14 @@ master_doc = 'index'
 # -- Options for intersphinx extension ---------------------------------------
 
 # Example configuration for intersphinx: refer to the Python standard library.
-intersphinx_mapping = {'https://docs.python.org/': None}
-
+intersphinx_mapping = {
+    'https://docs.python.org/': None,
+    'specutils': ('https://specutils.readthedocs.io/en/stable/', None),
+    'numpy': ('http://docs.scipy.org/doc/numpy/', None),
+    'scipy': ('http://docs.scipy.org/doc/scipy/reference/', None),
+    'matplotlib': ('http://matplotlib.org/stable', None),
+    'astropy' : ('https://docs.astropy.org/en/stable/', None)
+}
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for

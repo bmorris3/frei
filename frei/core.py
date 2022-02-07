@@ -12,9 +12,7 @@ from .plot import dashboard
 from .twostream import emit
 
 __all__ = [
-    'dask_client', 
-    'wavelength_grid', 
-    'F_TOA', 
+    'dask_client',
     'Grid', 
     'Planet', 
 ]
@@ -32,7 +30,7 @@ def dask_client(memory_limit='20 GiB'):
 
 def wavelength_grid(min_micron=0.5, max_micron=10, n_bins=500):
     """
-    Compute a wavelength grid. 
+    Compute a log-spaced wavelength grid.
     """
     lam = np.logspace(np.log10(min_micron), np.log10(max_micron), n_bins) * u.um
     wl_bins = np.concatenate([
@@ -62,6 +60,10 @@ def B_star(T_star, lam):
 
 class Planet(object): 
     """Container for planetary system information"""
+
+    @u.quantity_input(
+        m_bar = u.g, g=u.m/u.s**2, T_star=u.K
+    )
     def __init__(self, a_rstar, m_bar, g, T_star):
         """
         Parameters
@@ -100,12 +102,16 @@ class Grid(object):
     """
     Grid over temperatures, pressures and wavelengths.
     """
+    @u.quantity_input(
+        lam_min=u.um, lam_max=u.um, P_toa=u.bar, P_boa=u.bar,
+        T_ref=u.K, P_ref=u.bar
+    )
     def __init__(
         self, planet,
         # Wavelength grid:
-        lam_min=0.5, lam_max=10, n_wl_bins=500,
+        lam_min=0.5 * u.um, lam_max=10 * u.um, n_wl_bins=500,
         # Pressure grid: 
-        n_layers=30, P_toa=-6, P_boa=1.1,
+        P_toa=1e-6 * u.bar, P_boa=200 * u.bar, n_layers=30,
         # Initial temperature grid:
         T_ref=2300 * u.K, P_ref = 0.1 * u.bar
     ):
@@ -114,18 +120,18 @@ class Grid(object):
         ----------
         planet : ~frei.Planet
             Planet object associated with this grid.
-        lam_min : float
-            Minimum wavelength in units of microns.
-        lam_max : float
-            Maximum wavelength in units of microns.
+        lam_min : ~astropy.units.Quantity
+            Minimum wavelength.
+        lam_max : ~astropy.units.Quantity
+            Maximum wavelength
         n_wl_bins : int
             Number of log-spaced bins in wavelength
+        P_toa : ~astropy.units.Quantity
+            Pressure at the top of the atmosphere
+        P_boa : ~astropy.units.Quantity
+            Pressure at the bottom of the atmosphere
         n_layers : int
             Number of log-spaced bins in pressure
-        P_toa : float
-            Pressure at the top of the atmosphere in log10(bar)
-        P_boa : float
-            Pressure at the bottom of the atmosphere in log10(bar)
         T_ref : ~astropy.units.Quantity
             Reference temperature at reference pressure
         P_ref : ~astropy.units.Quantity
@@ -133,11 +139,14 @@ class Grid(object):
         """
         self.planet = planet
         self.lam, self.wl_bins, self.R = wavelength_grid(
-            min_micron=lam_min, max_micron=lam_max, n_bins=n_wl_bins
+            min_micron=lam_min.to(u.um).value,
+            max_micron=lam_max.to(u.um).value,
+            n_bins=n_wl_bins
         )
         
         self.pressures = pressure_grid(
-            n_layers=n_layers, P_toa=P_toa, P_boa=P_boa
+            n_layers=n_layers, P_toa=np.log10(P_toa.to(u.bar).value),
+            P_boa=np.log10(P_boa.to(u.bar).value)
         )
 
         self.init_temperatures = temperature_grid(
@@ -215,7 +224,8 @@ class Grid(object):
             final_temps, temperature_history, dtaus
         )
     
-    def emission_dashboard(self, spec, final_temps, temperature_history, dtaus, T_eff=2400*u.K):
+    def emission_dashboard(self, spec, final_temps, temperature_history, dtaus,
+                           T_eff=2400*u.K):
         """
         Produce the "daskboard" plot with the outputs from ``emit``.
 
