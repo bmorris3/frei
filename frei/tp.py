@@ -8,14 +8,29 @@ __all__ = [
 
 def pressure_grid(
     n_layers = 30,
-    P_toa = -6,  # log10(bar)
-    P_boa = 1.1,  # log10(bar)
+    P_toa = -6,
+    P_boa = 1.1,
 ):
     """
     Produce a pressure grid from bottom to top of atmosphere.
+
+    Parameters
+    ----------
+    n_layers : int
+        Number of layers in the atmosphere
+    P_toa : float
+        Pressure at the top of the atmosphere in log10(bar)
+    P_boa : float
+        Pressure at the bottom of the atmosphere in log10(bar)
+
+    Returns
+    -------
+    pressures : ~astropy.units.Quantity
+        Pressure grid
     """
     pressures = np.logspace(P_toa, P_boa, n_layers)[::-1] * u.bar
     return pressures
+
 
 def temperature_grid(
     pressures,
@@ -24,6 +39,20 @@ def temperature_grid(
 ):
     """
     Produce a rough initial temperature grid for each pressure.
+
+    Parameters
+    ----------
+    pressures : ~astropy.units.Quantity
+        Pressure grid
+    T_ref : ~astropy.units.Quantity
+        Temperature at reference pressure
+    P_ref : ~astropy.units.Quantity
+        Reference pressure
+
+    Returns
+    -------
+    pressures : ~astropy.units.Quantity
+        Pressure grid
     """
-    temperatures = T_ref * (pressures / P_ref) ** 0.1  # K
+    temperatures = T_ref * (pressures / P_ref) ** 0.1
     return temperatures

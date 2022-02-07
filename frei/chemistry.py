@@ -1,3 +1,4 @@
+import os
 import numpy as np
 from astropy.constants import k_B, m_p, G, h, c
 import astropy.units as u
@@ -7,16 +8,41 @@ __all__ = [
 ]
 
 
-def chemistry(temperatures, pressures, input_data=None, output_data=None, return_vmr=False, m_bar=2.4*m_p):
+def chemistry(
+        temperatures, pressures, fastchem=None, input_data=None,
+        output_data=None, return_vmr=False, m_bar=2.4*m_p
+):
     """
     Run pyfastchem to compute chemistry throughout an atmosphere.
+
+    Parameters
+    ----------
+    temperatures : ~astropy.units.Quantity
+        Temperature grid
+    pressures : ~astropy.units.Quantity
+        Pressure grid
+    fastchem : ~pyfastchem.FastChem
+        FastChem object from pyfastchem
+    input_data : ~pyfastchem.FastChemInput or None
+    output_data : ~pyfastchem.FastChemOutput or None
+    return_vmr : bool
+        If True, return the volume mixing ratio as well as the mass mixing ratio
+    m_bar : ~astropy.units.Quantity
+        Mean molecular weight
+
+    Returns
+    -------
+    fastchem_mmr : dict
+        Mass mixing ratios for each species
+    fastchem_vmr : dict (optional)
+        Volume mixing ratios for each species
     """
     import pyfastchem
     
     if input_data is None and output_data is None: 
         fastchem = pyfastchem.FastChem(
-            '/Users/brettmorris/git/FastChem/input/element_abundances_solar.dat', 
-            '/Users/brettmorris/git/FastChem/input/logK.dat', 1
+            os.path.join('data', 'element_abundances_solar.dat'),
+            os.path.join('data', 'logK.dat'), 1
         )
 
         #create the input and output structures for FastChem
@@ -56,7 +82,7 @@ def chemistry(temperatures, pressures, input_data=None, output_data=None, return
                 mass * m_p / m_bar
             ).to(u.dimensionless_unscaled).value
         else:
-            print("Species", species, " not found in FastChem")
+            print("Species", species_name, " not found in FastChem")
 
     if return_vmr: 
         return fastchem_mmr, fastchem_vmr

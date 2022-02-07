@@ -1,9 +1,7 @@
-from glob import glob
 import numpy as np
 import astropy.units as u
 from astropy.constants import m_p, G
 from specutils import Spectrum1D
-import logging
 from dask.distributed import Client, LocalCluster
 
 from .twostream import BB
@@ -64,7 +62,19 @@ def B_star(T_star, lam):
 
 class Planet(object): 
     """Container for planetary system information"""
-    def __init__(self, a_rstar, m_bar, g, T_star): 
+    def __init__(self, a_rstar, m_bar, g, T_star):
+        """
+        Parameters
+        ----------
+        a_rstar : float
+            Ratio of the semimajor axis of the orbit to the stellar radius
+        m_bar : ~astropy.units.Quantity
+            Mean molecular weight
+        g : ~astropy.units.Quantity
+            Surface gravity
+        T_star : ~astropy.units.Quantity
+            Stellar effective temperature
+        """
         self.a_rstar = a_rstar
         self.m_bar = m_bar
         self.g = g
@@ -73,7 +83,9 @@ class Planet(object):
     @classmethod
     def from_hot_jupiter(cls):
         """
-        Initialize a hot-Jupiter system with standard parameters
+        Initialize a hot-Jupiter system with standard parameters:
+        :math:`M=M_J`, :math:`R=R_J`, :math:`\mu=2.4`, :math:`g=g_J`,
+        :math:`T_\mathrm{eff}=5800` K.
         """
         g_jup = 1 * G * u.M_jup / u.R_jup**2
         return cls(
@@ -91,7 +103,7 @@ class Grid(object):
     def __init__(
         self, planet,
         # Wavelength grid:
-        min_micron=0.5, max_micron=10, n_wl_bins=500, 
+        lam_min=0.5, lam_max=10, n_wl_bins=500,
         # Pressure grid: 
         n_layers=30, P_toa=-6, P_boa=1.1,
         # Initial temperature grid:
@@ -100,19 +112,28 @@ class Grid(object):
         """
         Parameters
         ----------
-        planet
-        min_micron
-        max_micron
-        n_wl_bins
-        n_layers
-        P_toa
-        P_boa
-        T_ref
-        P_ref
+        planet : ~frei.Planet
+            Planet object associated with this grid.
+        lam_min : float
+            Minimum wavelength in units of microns.
+        lam_max : float
+            Maximum wavelength in units of microns.
+        n_wl_bins : int
+            Number of log-spaced bins in wavelength
+        n_layers : int
+            Number of log-spaced bins in pressure
+        P_toa : float
+            Pressure at the top of the atmosphere in log10(bar)
+        P_boa : float
+            Pressure at the bottom of the atmosphere in log10(bar)
+        T_ref : ~astropy.units.Quantity
+            Reference temperature at reference pressure
+        P_ref : ~astropy.units.Quantity
+            Reference pressure
         """
         self.planet = planet
         self.lam, self.wl_bins, self.R = wavelength_grid(
-            min_micron=min_micron, max_micron=max_micron, n_bins=n_wl_bins
+            min_micron=lam_min, max_micron=lam_max, n_bins=n_wl_bins
         )
         
         self.pressures = pressure_grid(
@@ -136,10 +157,20 @@ class Grid(object):
     def load_opacities(self, path='tmp/*.nc', opacities=None, client=None):
         """
         Load opacity tables from path.
+
+        Parameters
+        ----------
+        path : str
+            Path passed to ~glob.glob to find opacity netCDF files.
+        opacities : None or dict (optional)
+            If opacities are already computed, simply pass them into the Grid
+            object with this keyword argument.
+        client : None or ~dask.distributed.client.Client
+            Client for distributed dask computation on opacity tables
         """
         if self.opacities is None and opacities is None:
             self.opacities = binned_opacity(
-                'tmp/*.nc', self.init_temperatures, 
+                path, self.init_temperatures,
                 self.pressures, self.wl_bins, self.lam, client
             )
         else: 
@@ -148,6 +179,22 @@ class Grid(object):
     def emission_spectrum(self, n_timesteps=50):
         """
         Compute the emission spectrum for this grid.
+
+        Parameters
+        ----------
+        n_timesteps : int
+            Maximum number of timesteps to take towards radiative equilibrium
+
+        Returns
+        -------
+        spec : specutils.Spectrum1D
+            Emission spectrum
+        final_temps : ~astropy.units.Quantity
+            Final temperature grid
+        temperature_history : ~astropy.units.Quantity
+            Grid of temperatures with dimensions (n_layers, n_timesteps)
+        dtaus : ~numpy.ndarray
+            Change in optical depth in final iteration
         """
         if self.opacities is None:
             raise ValueError("Must load opacities before computing emission spectrum.")
@@ -170,7 +217,22 @@ class Grid(object):
     
     def emission_dashboard(self, spec, final_temps, temperature_history, dtaus, T_eff=2400*u.K):
         """
-        Produce the "daskboard" plot.
+        Produce the "daskboard" plot with the outputs from ``emit``.
+
+        Parameters
+        ----------
+        spec : specutils.Spectrum1D
+            Emission spectrum
+        final_temps : ~astropy.units.Quantity
+            Final temperature grid
+        temperature_history : ~astropy.units.Quantity
+            Grid of temperatures with dimensions (n_layers, n_timesteps)
+        dtaus : ~numpy.ndarray
+            Change in optical depth in final iteration
+        Returns
+        -------
+        fig, ax
+            Matplotlib figure and axis objects.
         """
         phoenix_lowres_padded = get_binned_phoenix_spectrum(
             T_eff, self.planet.g, self.wl_bins, self.lam

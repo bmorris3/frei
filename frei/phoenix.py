@@ -11,19 +11,38 @@ __all__ = [
     'get_binned_phoenix_spectrum'
 ]
 
-def emission_to_teff(F_2_up):
-    bbtemp = ((F_2_up.to(u.erg/u.s/u.cm**2, u.spectral_density(lam)) / sigma_sb)**(1/4)).decompose()
-    # print(bbtemp, bbtemp.max())
-    plt.semilogx(lam, bbtemp)
 
-    retrieve_phoenix_temperature = np.average(bbtemp, weights=F_2_up.value) + 250 * u.K
+def emission_to_teff(F_2_up, lam, offset=250 * u.K):
+    """
+    Effective temperature from emission spectrum.
 
-    # retrieve_phoenix_temperature = np.percentile(bbtemp, 95)
+    Parameters
+    ----------
+    F_2_up : ~astropy.units.Quantity
+        Spectrum
+    lam : ~astropy.units.Quantity
+        Wavelength array
+    offset : ~astropy.units.Quantity
+        Constant offset
+
+    Returns
+    -------
+    temp : ~astropy.units.Quantity
+        Effective temperature
+    """
+    bbtemp = (
+        (F_2_up.to(u.erg/u.s/u.cm**2, u.spectral_density(lam))
+         / sigma_sb)**(1/4)
+    ).decompose()
+
+    retrieve_phoenix_temperature = np.average(
+        bbtemp, weights=F_2_up.value
+    ) + offset
+
     return retrieve_phoenix_temperature
 
 
 def resolution(group):
-    # https://xarray.pydata.org/en/stable/examples/apply_ufunc_vectorize_1d.html
     wl = group.wavelength
     op = group.values
     
@@ -36,16 +55,37 @@ def resolution(group):
                             wavelength=[wl_values.mean()],
                         ), name='opacity')
 
-def get_binned_phoenix_spectrum(T_eff, g, wl_bins, lam):
+
+def get_binned_phoenix_spectrum(T_eff, g, wl_bins, lam, cache=True):
     """
     Return a binned PHOENIX spectrum with effective temperature T_eff.
+
+    Parameters
+    ----------
+    T_eff : ~astropy.units.Quantity
+        Effective temperature of the PHOENIX model to retrieve
+    g : ~astropy.units.Quantity
+        Surface gravity
+    wl_bins : ~astropy.units.Quantity
+        Wavelength bin edges
+    lam : ~astropy.units.Quantity
+        Wavelength bin centers
+    cache : bool
+        Cache downloaded PHOENIX spectrum
+
+    Returns
+    -------
+    binned_spectrum : ~astropy.units.Quantity
+        PHOENIX spectrum binned to wavelength grid
     """
-    spec = get_spectrum(T_eff.value, log_g=np.log10(g.cgs.value), cache=True)
+    spec = get_spectrum(T_eff.value, log_g=np.log10(g.cgs.value), cache=cache)
     phoenix_xr = xr.DataArray(
         spec.flux.to(flux_unit).value, dims=['wavelength'],
         coords=dict(wavelength=spec.wavelength.to(u.um).value)
     )
     phoenix_groups = phoenix_xr.groupby_bins("wavelength", wl_bins)
     phoenix_lowres = phoenix_groups.map(resolution)
-    phoenix_lowres_padded = np.pad(phoenix_lowres, (0, len(lam) - phoenix_lowres.shape[0]))
+    phoenix_lowres_padded = np.pad(
+        phoenix_lowres, (0, len(lam) - phoenix_lowres.shape[0])
+    ) * flux_unit
     return phoenix_lowres_padded

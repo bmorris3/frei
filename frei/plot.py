@@ -11,20 +11,45 @@ __all__ = [
     'dashboard'
 ]
 
-def dashboard(lam, F_2_up, phoenix_lowres_padded, dtaus, pressures, temps, temperature_history):
+
+def dashboard(
+        lam, F_2_up, binned_phoenix_spectrum, dtaus,
+        pressures, temps, temperature_history
+):
     """
     Generate a dashboard plot.
+
+    Parameters
+    ----------
+    lam : ~astropy.units.Quantity
+        Wavelength grid
+    F_2_up : ~astropy.units.Quantity
+        Emission spectrum
+    binned_phoenix_spectrum : ~astropy.units.Quantity
+        Binned PHOENIX spectrum
+    dtaus : list of lists, or ~numpy.ndarray
+        Change in optical depth
+    pressures : ~astropy.units.Quantity
+        Pressure grid
+    temps : ~astropy.units.Quantity
+        Final temperatures after iteration for radiative equilibrium
+    temperature_history : ~astropy.units.Quantity
+        Grid of temperatures for each timestep and pressure
+    Returns
+    -------
+    fig, ax : ~matplotlib.axes.Figure, ~matplotlib.axes.Axes
     """
     flux_unit = u.erg/u.cm**3/u.s
 
     fig = plt.figure(figsize=(10, 7))
     gs = GridSpec(2, 3, figure=fig)
 
-    ax = [fig.add_subplot(ax) for ax in [gs[0, :], gs[1, 0], gs[1, 1], gs[1, 2]]]
+    ax = [fig.add_subplot(ax)
+          for ax in [gs[0, :], gs[1, 0], gs[1, 1], gs[1, 2]]]
 
     with quantity_support():
         ax[0].loglog(
-            lam, phoenix_lowres_padded * flux_unit, color='C1', label='PHOENIX'
+            lam, binned_phoenix_spectrum, color='C1', label='PHOENIX'
         )
         ax[0].semilogx(lam, F_2_up, color='C0', label='frei')
 
@@ -48,7 +73,7 @@ def dashboard(lam, F_2_up, phoenix_lowres_padded, dtaus, pressures, temps, tempe
     cf /= np.sum(cf, axis=0)
 
     lg, pg = np.meshgrid(lam.value, pressures.value)
-    cax = ax[1].pcolormesh(lg, pg, cf[::-1], cmap=plt.cm.Greys, shading='auto')#, vmin=0, vmax=1)
+    cax = ax[1].pcolormesh(lg, pg, cf[::-1], cmap=plt.cm.Greys, shading='auto')
     plt.colorbar(cax, ax=ax[1])
     ax[1].set_yscale('log')
     ax[1].invert_yaxis()
@@ -57,7 +82,7 @@ def dashboard(lam, F_2_up, phoenix_lowres_padded, dtaus, pressures, temps, tempe
     )
     ax[0].set(
         xlabel='Wavelength [$\mu$m]', title='Emission spectrum', 
-        ylim=[8e10, 3e13], xlim=[0.5, 10] # #fluxes_upwards[-1].min(),  # xlim=[lam.min(), lam.max()],
+        ylim=[8e10, 3e13], xlim=[0.5, 10]
     )
     ax[1].set_xscale('log')
 
@@ -65,16 +90,20 @@ def dashboard(lam, F_2_up, phoenix_lowres_padded, dtaus, pressures, temps, tempe
     for i in range(temperature_history.shape[1]):
         color = cmap(i / temperature_history.shape[1])
         if np.all(temperature_history[:, i] != 0):
-            ax[2].semilogy(temperature_history[:-1, i], pressures[:-1], c=color, alpha=0.3);
+            ax[2].semilogy(temperature_history[:-1, i], pressures[:-1],
+                           c=color, alpha=0.3);
     ax[2].semilogy(temps[:-1], pressures[:-1], '-', color='k', lw=3)
     ax[2].invert_yaxis()
-    ax[2].annotate("Initial", (0.1, 0.18), color=cmap(0), xycoords='axes fraction')
+    ax[2].annotate("Initial", (0.1, 0.18), color=cmap(0),
+                   xycoords='axes fraction')
     ax[2].annotate("Final", (0.1, 0.1), xycoords='axes fraction')
     ax[2].set(
         xlabel='Temperature [K]', ylabel='Pressure [bar]'
     )
 
-    fastchem_mmr, fastchem_vmr = chemistry(temps[:-1], pressures[:-1], return_vmr=True)
+    fastchem_mmr, fastchem_vmr = chemistry(
+        temps[:-1], pressures[:-1], return_vmr=True
+    )
     for species in fastchem_vmr:
         ax[3].semilogy(
             np.log10(fastchem_vmr[species]), pressures[:-1], 
@@ -92,4 +121,3 @@ def dashboard(lam, F_2_up, phoenix_lowres_padded, dtaus, pressures, temps, tempe
             axis.spines[sp].set_visible(False)
     fig.tight_layout()
     return fig, ax
-    # fig.savefig('plots/demo00.png', bbox_inches='tight', dpi=200)
