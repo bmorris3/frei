@@ -275,13 +275,14 @@ def emit(
     """
     n_layers = len(pressures)
     # from bottom of the atmosphere
-    temperature_history = np.zeros((n_layers, n_timesteps)) * u.K
-    temperature_history[:, 0] = temperatures.copy()
 
-    if n_timesteps > 2:
+    if n_timesteps > 1:
         timestep_iterator = tqdm(np.arange(n_timesteps - 1))
+        temperature_history = np.zeros((n_layers, n_timesteps)) * u.K
+        temperature_history[:, 0] = temperatures.copy()
     else:
-        timestep_iterator = np.arange(2)
+        timestep_iterator = np.arange(1)
+        temperature_history = temperatures.copy()[None, :]
 
     for j in timestep_iterator:
         dtaus = []
@@ -349,8 +350,10 @@ def emit(
             ).decompose()
 
         temperature_history[:, j] = temps
-        dT = u.Quantity(temperature_changes)
-        temperature_history[:, j+1] = temps - dT 
+
+        if n_timesteps > 1:
+            dT = u.Quantity(temperature_changes)
+            temperature_history[:, j+1] = temps - dT
 
         # Stop iterating if T-p profile changes by <10 K
         if np.abs(dT).max() < convergence_thresh:

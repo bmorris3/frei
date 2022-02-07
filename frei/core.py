@@ -87,7 +87,7 @@ class Planet(object):
     def from_hot_jupiter(cls):
         """
         Initialize a hot-Jupiter system with standard parameters:
-        :math:`M=M_J`, :math:`R=R_J`, :math:`\bar{m}=2.4`, :math:`g=g_J`,
+        :math:`M=M_J`, :math:`R=R_J`, :math:`\\bar{m}=2.4`, :math:`g=g_J`,
         :math:`T_\mathrm{eff}=5800` K.
         """
         g_jup = 1 * G * u.M_jup / u.R_jup**2
