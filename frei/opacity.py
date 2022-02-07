@@ -151,6 +151,8 @@ def kappa(
 
     Parameters
     ----------
+    opacities : dict
+        Opacity dictionary of xarray.DataArray's
     temperature : ~astropy.units.Quantity
         Temperature value
     pressure : ~astropy.units.Quantity

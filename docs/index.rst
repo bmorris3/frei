@@ -1,18 +1,23 @@
 frei: Fast radiative transfer for exoplanet inference
 -----------------------------------------------------
 
-Go from zero to RT in five lines:
+Install the bleeding-edge version of frei with::
+
+    python -m pip install git+https://github.com/bmorris3/frei
+
+and go from zero to RT in five lines:
 
 .. plot::
     :include-source:
 
+    import matplotlib.pyplot as plt
     import astropy.units as u
     from frei import Planet, Grid, load_example_opacity
 
     # Define planetary system parameters
     planet = Planet.from_hot_jupiter()
 
-    # Define a grid in wavelength, pressure, and temperature, set temperature
+    # Define a grid in wavelength, pressure, and temperature; set temperature
     grid = Grid(
         planet,
         n_wl_bins=300,     # number of wavelength bins
@@ -33,6 +38,7 @@ Go from zero to RT in five lines:
 
     # Plot the "dashboard", showing important quantities
     fig, ax = grid.emission_dashboard(*emission_result, plot_phoenix=False)
+    plt.show()
 
 
 .. toctree::

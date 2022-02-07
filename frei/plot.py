@@ -1,11 +1,12 @@
-import matplotlib.pyplot as  plt
 import numpy as np
-from astropy.constants import h, c, k_B
+import matplotlib.pyplot as  plt
 from matplotlib.gridspec import GridSpec
 import astropy.units as u
+from astropy.constants import h, c, k_B
 from astropy.visualization import quantity_support
 
 from .chemistry import chemistry
+from .opacity import kappa
 
 __all__ = [
     'dashboard'
@@ -14,7 +15,7 @@ __all__ = [
 
 def dashboard(
         lam, F_2_up, binned_phoenix_spectrum, dtaus,
-        pressures, temps, temperature_history
+        pressures, temps, temperature_history, opacities
 ):
     """
     Generate a dashboard plot.
@@ -35,17 +36,20 @@ def dashboard(
         Final temperatures after iteration for radiative equilibrium
     temperature_history : ~astropy.units.Quantity
         Grid of temperatures for each timestep and pressure
+    opacities : dict
+        Opacity dictionary of xarray.DataArray's
+
     Returns
     -------
     fig, ax : ~matplotlib.axes.Figure, ~matplotlib.axes.Axes
     """
     flux_unit = u.erg/u.cm**3/u.s
 
-    fig = plt.figure(figsize=(10, 7))
-    gs = GridSpec(2, 3, figure=fig)
+    fig = plt.figure(figsize=(12, 7))
+    gs = GridSpec(2, 4, figure=fig)
 
     ax = [fig.add_subplot(ax)
-          for ax in [gs[0, :], gs[1, 0], gs[1, 1], gs[1, 2]]]
+          for ax in [gs[0, :], gs[1, 0], gs[1, 1], gs[1, 2], gs[1, 3]]]
 
     with quantity_support():
         if np.any(binned_phoenix_spectrum.value != 0):
@@ -121,6 +125,15 @@ def dashboard(
         title='Chemistry (FastChem)'
     )
 
+    k, sigma_scattering = kappa(
+        opacities, np.interp(1 * u.bar, pressures, temps), 1 * u.bar, lam
+    )
+    ax[4].loglog(lam, k.to(u.cm ** 2 / u.g), label='Total')
+    ax[4].loglog(lam, sigma_scattering, label='Scattering')
+    ax[4].set(
+        xlabel='Wavelength [$\mu$m]', ylabel='Opacity [cm$^2$ g$^{-1}$]'
+    )
+    ax[4].legend()
     for axis in ax: 
         for sp in ['right', 'top']:
             axis.spines[sp].set_visible(False)

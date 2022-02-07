@@ -272,7 +272,7 @@ class Grid(object):
         
         fig, ax = dashboard(
             self.lam, spec.flux, phoenix_lowres_padded, dtaus, 
-            self.pressures, final_temps, temperature_history
+            self.pressures, final_temps, temperature_history, self.opacities
         )
         
         return fig, ax
