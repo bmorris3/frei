@@ -3,7 +3,6 @@ import numpy as np
 import astropy.units as u
 from astropy.constants import k_B, m_p, G, h, c
 import xarray as xr
-import dask
 
 from .chemistry import chemistry
 
@@ -17,6 +16,7 @@ interp_kwargs = dict(
     method='nearest', 
     kwargs=dict(fill_value="extrapolate")
 )
+
 
 def mapfunc_exact(group, temperature=2500, pressure=1e-08, interp_kwargs=interp_kwargs):
     # https://xarray.pydata.org/en/stable/examples/apply_ufunc_vectorize_1d.html
@@ -34,7 +34,9 @@ def mapfunc_exact(group, temperature=2500, pressure=1e-08, interp_kwargs=interp_
     ) / Delta_x
     return result.expand_dims(dict(wavelength=[wl.mean()]))
 
+
 def delayed_map_exact_concat(grouped, temperatures, pressures, lam, client):
+    import dask
     results = []
     for i, (name, group) in enumerate(grouped):
         results.append(
@@ -119,17 +121,18 @@ n_lambda_He = lambda wavelength: 1e-8 * (
 n_ref_H2 = 2.68678e19 * u.cm**-3
 n_ref_He = 2.546899e19 * u.cm**-3
 K_lambda = 1
-# Malik 2017 Eqn 16
 
 
-def rayleigh_H2(wavelength, m_bar=2.4*m_p): 
+def rayleigh_H2(wavelength, m_bar=2.4*m_p):
+    # Malik 2017 Eqn 16
     return ((24 * np.pi**3 / n_ref_H2**2 / wavelength**4 *
         ((n_lambda_H2(wavelength)**2 - 1) / 
          (n_lambda_H2(wavelength)**2 + 2))**2 * K_lambda
     ) / m_bar).decompose()
 
 
-def rayleigh_He(wavelength, m_bar=2.4*m_p): 
+def rayleigh_He(wavelength, m_bar=2.4*m_p):
+    # Malik 2017 Eqn 16
     return ((24 * np.pi**3 / n_ref_He**2 / wavelength**4 *
         ((n_lambda_He(wavelength)**2 - 1) / 
          (n_lambda_He(wavelength)**2 + 2))**2 * K_lambda

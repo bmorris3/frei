@@ -2,7 +2,6 @@ import numpy as np
 import astropy.units as u
 from astropy.constants import m_p, G, sigma_sb
 from specutils import Spectrum1D
-from dask.distributed import Client, LocalCluster
 
 from .twostream import BB
 from .tp import pressure_grid, temperature_grid
@@ -22,6 +21,7 @@ def dask_client(memory_limit='20 GiB'):
     """
     Launch a local cluster, return the client.
     """
+    from dask.distributed import Client, LocalCluster
     cluster = LocalCluster(
         memory_limit=memory_limit
     )
