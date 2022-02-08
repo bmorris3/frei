@@ -13,7 +13,7 @@ from .chemistry import chemistry
 __all__ = [
     'binned_opacity',
     'kappa',
-    'load_example_opacity'
+    'load_example_opacity',
     'download_molecule', 
     'download_atom'
 ]
@@ -24,7 +24,9 @@ interp_kwargs = dict(
 )
 
 
-def mapfunc_exact(group, temperature=2500, pressure=1e-08, interp_kwargs=interp_kwargs):
+def mapfunc_exact(
+        group, temperature=2500, pressure=1e-08, interp_kwargs=interp_kwargs
+):
     # https://xarray.pydata.org/en/stable/examples/apply_ufunc_vectorize_1d.html
     wl = group.wavelength
     op = group.interp(
@@ -215,7 +217,10 @@ def load_example_opacity(grid, seed=42):
         Opacity tables for each species
     """
     np.random.seed(seed)
-    simple_opacities = np.zeros((grid.pressures.shape[0], grid.init_temperatures.shape[0], grid.lam.shape[0]))
+    simple_opacities = np.zeros(
+        (grid.pressures.shape[0], grid.init_temperatures.shape[0],
+         grid.lam.shape[0])
+    )
 
     so = (
         # Broad infrared opacity
@@ -229,14 +234,18 @@ def load_example_opacity(grid, seed=42):
         np.random.uniform(low=0.1, high=0.2, size=15),
         np.random.uniform(low=0.5, high=1, size=15)
     ):
-        so += amp * np.exp(-0.5 * (grid.lam - wl_micron * u.um)**2 / (0.005 * u.um)**2)
+        so += amp * np.exp(
+            -0.5 * (grid.lam - wl_micron * u.um)**2 / (0.005 * u.um)**2
+        )
     
     # Add a few water-like absorption bands in the NIR
     for amp, wl_micron in zip(
         [0.22, 0.2, 0.18],
         np.logspace(np.log10(1.4), np.log10(2.7), 3)
     ):
-        so += amp * np.exp(-0.5 * (grid.lam - wl_micron * u.um)**2 / (0.13 * u.um)**2)
+        so += amp * np.exp(
+            -0.5 * (grid.lam - wl_micron * u.um)**2 / (0.13 * u.um)**2
+        )
     
     simple_opacities[:] += 10**(2.5 * (so.value - 0.4))
 
@@ -273,7 +282,8 @@ def dace_download_molecule(
     os.makedirs('tmp', exist_ok=True)
     archive_name = isotopologue + '__' + linelist + '.tar.gz'
     Molecule.download(
-        isotopologue, linelist, float(version), temperature_range, pressure_range, 
+        isotopologue, linelist, float(version),
+        temperature_range, pressure_range,
         output_directory='tmp', output_filename=archive_name
     )
     
@@ -288,7 +298,8 @@ def dace_download_atom(
     os.makedirs('tmp', exist_ok=True)
     archive_name = element + '__' + linelist + '.tar.gz'
     Atom.download(
-        element, charge, linelist, float(version), temperature_range, pressure_range, 
+        element, charge, linelist, float(version),
+        temperature_range, pressure_range,
         output_directory='tmp', output_filename=archive_name
     )
     
@@ -345,7 +356,9 @@ def opacity_dir_to_netcdf(opacity_dir, outpath):
         pgrid = np.concatenate([pgrid, 10**(-1*np.log10(pgrid))])
     else: 
         extrapolate_pgrid = False
-    opacity_grid = np.zeros((len(tgrid), len(pgrid), len(unique_wavelengths)), dtype='float32')
+    opacity_grid = np.zeros(
+        (len(tgrid), len(pgrid), len(unique_wavelengths)), dtype='float32'
+    )
 
     for dirpath, dirnames, filenames in os.walk(opacity_dir): 
         for filename in filenames: 
@@ -424,9 +437,14 @@ def download_molecule(isotopologue, linelist):
     """
     archive_name = dace_download_molecule(isotopologue, linelist)
     untar_bin_files(archive_name)
-    bin_dir = get_opacity_dir_path_molecule(archive_name, isotopologue, linelist)
+    bin_dir = get_opacity_dir_path_molecule(
+        archive_name, isotopologue, linelist
+    )
 
-    nc_path = os.path.join(os.path.expanduser('~'), '.frei', isotopologue + '__' + linelist + '.nc')
+    nc_path = os.path.join(
+        os.path.expanduser('~'), '.frei', isotopologue + '__' +
+        linelist + '.nc'
+    )
     opacity_dir_to_netcdf(bin_dir, nc_path)
     clean_up(bin_dir, archive_name)
 
@@ -452,6 +470,9 @@ def download_atom(atom, charge, linelist):
     untar_bin_files(archive_name)
     bin_dir = get_opacity_dir_path_atom(linelist)
     
-    nc_path = os.path.join(os.path.expanduser('~'), '.frei', atom + '_' + str(int(charge)) +'__' + linelist + '.nc')
+    nc_path = os.path.join(
+        os.path.expanduser('~'), '.frei', atom + '_' + str(int(charge)) +
+        '__' + linelist + '.nc'
+    )
     opacity_dir_to_netcdf(bin_dir, nc_path)
     clean_up(bin_dir, archive_name)

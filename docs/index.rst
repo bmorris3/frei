@@ -46,8 +46,9 @@ and go from zero to RT in five lines:
    :caption: Contents:
 
    frei/install.rst
+   frei/opacities.rst
    frei/index.rst
-   
+
 
 Indices and tables
 ==================
