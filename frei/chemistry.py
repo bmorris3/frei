@@ -58,6 +58,7 @@ def chemistry(
             os.path.dirname(__file__), 'data', 'logK.dat'
         ), 1
     )
+    fastchem.setVerboseLevel(0)
 
     #create the input and output structures for FastChem
     input_data = FastChemInput()
