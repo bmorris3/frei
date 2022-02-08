@@ -1,6 +1,6 @@
 import os
 import numpy as np
-from astropy.constants import k_B, m_p, G, h, c
+from astropy.constants import k_B, m_p
 import astropy.units as u
 
 __all__ = [
@@ -59,15 +59,15 @@ def chemistry(
         ), 0
     )
 
-    #create the input and output structures for FastChem
+    # create the input and output structures for FastChem
     input_data = FastChemInput()
     output_data = FastChemOutput()
     
     input_data.temperature = temperatures.value[::-1]
     input_data.pressure = pressures.to(u.bar).value[::-1]
 
-    #run FastChem on the entire p-T structure
-    fastchem_flag = fastchem.calcDensities(input_data, output_data)
+    # run FastChem on the entire p-T structure
+    fastchem.calcDensities(input_data, output_data)
 
     n_densities = np.array(output_data.number_densities) / u.cm**3
 

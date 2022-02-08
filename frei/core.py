@@ -64,7 +64,7 @@ class Planet(object):
     """Container for planetary system information"""
 
     @u.quantity_input(
-        m_bar = u.g, g=u.m/u.s**2, T_star=u.K
+        m_bar=u.g, g=u.m/u.s**2, T_star=u.K
     )
     def __init__(self, a_rstar, m_bar, g, T_star):
         """
@@ -89,7 +89,7 @@ class Planet(object):
         """
         Initialize a hot-Jupiter system with standard parameters:
         :math:`M=M_J`, :math:`R=R_J`, :math:`\\bar{m}=2.4`, :math:`g=g_J`,
-        :math:`T_\mathrm{eff}=5800` K.
+        :math:`T_\\mathrm{eff}=5800` K.
         """
         g_jup = 1 * G * u.M_jup / u.R_jup**2
         return cls(
@@ -115,7 +115,7 @@ class Grid(object):
         # Pressure grid: 
         P_toa=1e-6 * u.bar, P_boa=200 * u.bar, n_layers=30,
         # Initial temperature grid:
-        T_ref=2300 * u.K, P_ref = 0.1 * u.bar
+        T_ref=2300 * u.K, P_ref=0.1 * u.bar
     ):
         """
         Parameters

@@ -1,5 +1,5 @@
 import numpy as np
-import matplotlib.pyplot as  plt
+import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import astropy.units as u
 from astropy.constants import h, c, k_B
@@ -14,8 +14,8 @@ __all__ = [
 
 
 def dashboard(
-        lam, F_2_up, binned_phoenix_spectrum, dtaus,
-        pressures, temps, temperature_history, opacities
+    lam, F_2_up, binned_phoenix_spectrum, dtaus,
+    pressures, temps, temperature_history, opacities
 ):
     """
     Generate a dashboard plot.
@@ -83,14 +83,13 @@ def dashboard(
     ax[1].set_yscale('log')
     ax[1].invert_yaxis()
     ax[1].set(
-        xlabel='Wavelength [$\mu$m]', ylabel='Pressure [bar]',
+        xlabel=r'Wavelength [$\mu$m]', ylabel='Pressure [bar]',
         title='Contrib Func',
         xlim=[lam.value.min(), lam.value.max()], 
         ylim=[pressures.value.max(), pressures.value.min()]
     )
     ax[0].set(
-        xlabel='Wavelength [$\mu$m]', title='Emission spectrum', 
-        #ylim=[8e10, 3e13], xlim=[0.5, 10]
+        xlabel=r'Wavelength [$\mu$m]', title='Emission spectrum',
     )
     ax[1].set_xscale('log')
 
@@ -99,7 +98,7 @@ def dashboard(
         color = cmap(i / temperature_history.shape[1])
         if np.all(temperature_history[:, i] != 0):
             ax[2].semilogy(temperature_history[:-1, i], pressures[:-1],
-                           c=color, alpha=0.3);
+                           c=color, alpha=0.3)
     ax[2].semilogy(temps[:-1], pressures[:-1], '-', color='k', lw=3)
     ax[2].invert_yaxis()
     ax[2].annotate("Initial", (0.1, 0.18), color=cmap(0),
@@ -132,7 +131,7 @@ def dashboard(
         ax[4].loglog(lam, k.to(u.cm ** 2 / u.g), label='Total')
         ax[4].loglog(lam, sigma_scattering.to(u.cm ** 2 / u.g), label='Scattering')
     ax[4].set(
-        xlabel='Wavelength [$\mu$m]', ylabel='Opacity [cm$^2$ g$^{-1}$]'
+        xlabel=r'Wavelength [$\mu$m]', ylabel='Opacity [cm$^2$ g$^{-1}$]'
     )
     ax[4].legend()
     for axis in ax: 

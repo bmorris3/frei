@@ -22,7 +22,7 @@ def test_example_opacities():
 
     grid = Grid(
         planet=planet,
-        T_ref = T_ref
+        T_ref=T_ref
     )
 
     op = grid.load_opacities(opacities=load_example_opacity(grid))

@@ -5,7 +5,7 @@ import shutil
 from glob import glob
 import numpy as np
 import astropy.units as u
-from astropy.constants import k_B, m_p, G, h, c
+from astropy.constants import m_p
 import xarray as xr
 
 from .chemistry import chemistry
@@ -17,6 +17,10 @@ __all__ = [
     'download_molecule', 
     'download_atom'
 ]
+
+n_ref_H2 = 2.68678e19 * u.cm**-3
+n_ref_He = 2.546899e19 * u.cm**-3
+K_lambda = 1
 
 interp_kwargs = dict(
     method='nearest', 
@@ -35,7 +39,7 @@ def mapfunc_exact(
     
     Delta_x = wl.max() - wl.min()
     result = xr.apply_ufunc(
-        np.trapz, op, wl, dask='allowed', #dask='parallelized',
+        np.trapz, op, wl, dask='allowed',
         input_core_dims=[["temperature", "pressure", "wavelength"],
                          ["wavelength"]],
         output_core_dims=[["temperature", "pressure"]],
@@ -117,17 +121,18 @@ def binned_opacity(
     return results
 
 
-# Malik 2017 Eqn 17
-n_lambda_H2 = lambda wavelength: 13.58e-5 * (
+def n_lambda_H2(wavelength):
+    # Malik 2017 Eqn 17
+    return 13.58e-5 * (
         1 + (7.52e-11 * u.cm**2) * wavelength**-2
-) + 1
-# Deitrick 2020 Eqn C3
-n_lambda_He = lambda wavelength: 1e-8 * (
-        2283 + (1.8102e13 / (1.5342e10 - (wavelength / (1 * u.um))**-2))
-) + 1
-n_ref_H2 = 2.68678e19 * u.cm**-3
-n_ref_He = 2.546899e19 * u.cm**-3
-K_lambda = 1
+    ) + 1
+
+
+def n_lambda_He(wavelength):
+    # Deitrick 2020 Eqn C3
+    return 1e-8 * (2283 +
+        (1.8102e13 / (1.5342e10 - (wavelength / (1 * u.um))**-2))
+    ) + 1
 
 
 def rayleigh_H2(wavelength, m_bar=2.4*m_p):
@@ -256,7 +261,7 @@ def load_example_opacity(grid, seed=42):
     simple_opacities[:] += 10**(2.5 * (so.value - 0.4))
 
     # Save this fake opacity grid to the water key in the opacity dictionary
-    op = dict(H2O = xr.DataArray(
+    op = dict(H2O=xr.DataArray(
         simple_opacities, 
         dims=['pressure', 'temperature', 'wavelength'], 
         coords=dict(
@@ -275,7 +280,7 @@ def iso_to_species(isotopologue):
     """
     species = ""
     for element in isotopologue.split('-'):
-        for s in re.findall('\D+\d*', element): 
+        for s in re.findall(r'\D+\d*', element):
             species += ''.join(s)
     return species
 
@@ -418,7 +423,7 @@ def opacity_dir_to_netcdf(opacity_dir, outpath):
         os.makedirs(os.path.dirname(outpath), exist_ok=True)
     
     ds.to_netcdf(outpath if outpath.endswith(".nc") else outpath + '.nc', 
-                 encoding={'opacity': {'dtype': 'float32',  "zlib": True}})
+                 encoding={'opacity': {'dtype': 'float32', "zlib": True}})
 
 
 def clean_up(bin_dir, archive_name): 
