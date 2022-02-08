@@ -11,3 +11,4 @@ dependencies:
     - specutils
     - expecto
     - tqdm
+    - pyfastchem
