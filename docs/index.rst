@@ -37,7 +37,7 @@ and go from zero to RT in five lines:
     )
 
     # Plot the "dashboard", showing important quantities
-    fig, ax = grid.emission_dashboard(*emission_result, plot_phoenix=False)
+    fig, ax = grid.emission_dashboard(*emission_result)
     plt.show()
 
 

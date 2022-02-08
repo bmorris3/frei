@@ -190,7 +190,7 @@ def kappa(
     return u.Quantity(ops).sum(axis=0), sigma_scattering
 
 
-def load_example_opacity(grid):
+def load_example_opacity(grid, seed=42):
     """
     Load "example" opacity xarray. 
     
@@ -209,16 +209,32 @@ def load_example_opacity(grid):
     op : dict
         Opacity tables for each species
     """
+    np.random.seed(seed)
     simple_opacities = np.zeros((grid.pressures.shape[0], grid.init_temperatures.shape[0], grid.lam.shape[0]))
 
     so = (
+        # Broad infrared opacity
         np.exp(-0.5 * (grid.lam - 4 * u.um)**2 / (2 * u.um)**2) + 
-        0.8 * np.exp(-0.5 * (grid.lam - 0.5 * u.um)**2 / (0.5 * u.um)**2) + 
-        np.exp(-0.5 * (grid.lam - 1.1 * u.um)**2 / (0.02 * u.um)**2)
+        # Broad optical opacity
+        0.8 * np.exp(-0.5 * (grid.lam - 0.3 * u.um)**2 / (0.5 * u.um)**2)
     )
-
-    simple_opacities[:] += 10**(2 * (so.value - 0.4))
     
+    # Add a bunch of random absorption bands in the optical
+    for amp, wl_micron in zip(
+        np.random.uniform(low=0.1, high=0.2, size=15),
+        np.random.uniform(low=0.5, high=1, size=15)
+    ):
+        so += amp * np.exp(-0.5 * (grid.lam - wl_micron * u.um)**2 / (0.005 * u.um)**2)
+    
+    # Add a few water-like absorption bands in the NIR
+    for amp, wl_micron in zip(
+        [0.22, 0.2, 0.18],
+        np.logspace(np.log10(1.4), np.log10(2.7), 3)
+    ):
+        so += amp * np.exp(-0.5 * (grid.lam - wl_micron * u.um)**2 / (0.13 * u.um)**2)
+    
+    simple_opacities[:] += 10**(2.5 * (so.value - 0.4))
+
     # Save this fake opacity grid to the water key in the opacity dictionary
     op = dict(H2O = xr.DataArray(
         simple_opacities, 

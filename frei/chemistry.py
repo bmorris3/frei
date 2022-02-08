@@ -63,15 +63,15 @@ def chemistry(
     input_data = FastChemInput()
     output_data = FastChemOutput()
     
-    input_data.temperature = temperatures.value
-    input_data.pressure = pressures.to(u.bar).value
+    input_data.temperature = temperatures.value[::-1]
+    input_data.pressure = pressures.to(u.bar).value[::-1]
 
     #run FastChem on the entire p-T structure
     fastchem_flag = fastchem.calcDensities(input_data, output_data)
 
     n_densities = np.array(output_data.number_densities) / u.cm**3
 
-    gas_number_density = pressures / (k_B * temperatures)
+    gas_number_density = pressures[::-1] / (k_B * temperatures[::-1])
     # Hill notation, common spelling, mass
     all_species = [
         ['H2O1', 'H2O', 16+2], 
@@ -86,13 +86,16 @@ def chemistry(
     for i, (species_name_hill, species_name, mass) in enumerate(all_species):
         index = fastchem.getSpeciesIndex(species_name_hill)
         if index != FASTCHEM_UNKNOWN_SPECIES:
-            if return_vmr:
-                fastchem_vmr[species_name] = (
-                    n_densities[:, index] / gas_number_density
-                ).to(u.dimensionless_unscaled).value
-            fastchem_mmr[species_name] = (
+            vmr = (
                 n_densities[:, index] / gas_number_density
-            ).to(u.dimensionless_unscaled).value * (
+            ).to(u.dimensionless_unscaled).value
+            
+            if len(vmr.shape) > 0:
+                vmr = vmr[::-1]
+            
+            if return_vmr:
+                fastchem_vmr[species_name] = vmr
+            fastchem_mmr[species_name] = vmr * (
                 mass * m_p / m_bar
             ).to(u.dimensionless_unscaled).value
         else:

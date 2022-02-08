@@ -110,7 +110,7 @@ def dashboard(
     )
 
     fastchem_mmr, fastchem_vmr = chemistry(
-        temps[:-1][::-1], pressures[:-1][::-1], return_vmr=True
+        temps[:-1], pressures[:-1], return_vmr=True
     )
 
     for species in fastchem_vmr:
@@ -128,8 +128,9 @@ def dashboard(
     k, sigma_scattering = kappa(
         opacities, np.interp(1 * u.bar, pressures, temps), 1 * u.bar, lam
     )
-    ax[4].loglog(lam, k.to(u.cm ** 2 / u.g), label='Total')
-    ax[4].loglog(lam, sigma_scattering, label='Scattering')
+    with quantity_support():
+        ax[4].loglog(lam, k.to(u.cm ** 2 / u.g), label='Total')
+        ax[4].loglog(lam, sigma_scattering.to(u.cm ** 2 / u.g), label='Scattering')
     ax[4].set(
         xlabel='Wavelength [$\mu$m]', ylabel='Opacity [cm$^2$ g$^{-1}$]'
     )

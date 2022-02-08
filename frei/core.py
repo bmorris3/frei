@@ -233,7 +233,7 @@ class Grid(object):
         )
     
     def emission_dashboard(self, spec, final_temps, temperature_history, dtaus,
-                           T_eff=None, plot_phoenix=False, cache=False):
+                           T_eff=None, plot_phoenix=True, cache=False):
         """
         Produce the "dashboard" plot with the outputs from ``emission_spectrum``.
 
@@ -259,10 +259,10 @@ class Grid(object):
         fig, ax
             Matplotlib figure and axis objects.
         """
-        if T_eff is None:
-            T_eff = effective_temperature(self, spec, dtaus, final_temps)
-
         if plot_phoenix:
+            if T_eff is None:
+                T_eff = effective_temperature(self, spec, dtaus, final_temps)
+
             phoenix_lowres_padded = get_binned_phoenix_spectrum(
                 T_eff, self.planet.g, self.wl_bins, self.lam, cache=cache
             )
