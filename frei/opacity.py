@@ -1,3 +1,7 @@
+import re
+import os
+import tarfile
+import shutil
 from glob import glob
 import numpy as np
 import astropy.units as u
@@ -10,6 +14,8 @@ __all__ = [
     'binned_opacity',
     'kappa',
     'load_example_opacity'
+    'download_molecule', 
+    'download_atom'
 ]
 
 interp_kwargs = dict(
@@ -60,7 +66,7 @@ def delayed_map_exact_concat(grouped, temperatures, pressures, lam, client):
 
 
 def binned_opacity(
-    path, temperatures, pressures, wl_bins, lam, client
+    temperatures, pressures, wl_bins, lam, client, path=None
 ):
     """
     Compute opacity for all available species, binned to wavelengths lam.
@@ -85,15 +91,14 @@ def binned_opacity(
     op : dict
         Opacity tables for each species
     """
-    if len(set(temperatures)) == 1: 
-        # uniform temperature submitted, draw temperature grid from this temperature grid: 
-        temperatures = np.linspace(500, 4000, len(pressures))[::-1] * u.K
+    if path is None: 
+        path = os.path.join(os.path.expanduser('~'), '.frei', '*.nc')
         
     results = dict()    
-    xr_kwargs = dict(chunks='auto')#, engine='h5netcdf')
+    xr_kwargs = dict(chunks='auto')
     paths = glob(path)
     for i, path in enumerate(paths): 
-        species_name = path.split('/')[-1].split('_')[0]
+        species_name = iso_to_species(path.split('/')[-1].split('_')[0])
         
         species_ds = xr.open_dataset(path, **xr_kwargs)
         print(f'Loading opacity for {species_name} ' +
@@ -247,3 +252,206 @@ def load_example_opacity(grid, seed=42):
     ))
     
     return op
+
+
+def iso_to_species(isotopologue):
+    """
+    Take 1H2-16O and turn it to H2O, or take 48Ti-16O and turn it to TiO
+    """
+    species = ""
+    for element in isotopologue.split('-'):
+        for s in re.findall('\D+\d*', element): 
+            species += ''.join(s)
+    return species
+
+
+def dace_download_molecule(
+    isotopologue='48Ti-16O', linelist='Toto', 
+    temperature_range=[500, 5000], pressure_range=[-6, 1.5], version=1
+):
+    from dace.opacity import Molecule
+    os.makedirs('tmp', exist_ok=True)
+    archive_name = isotopologue + '__' + linelist + '.tar.gz'
+    Molecule.download(
+        isotopologue, linelist, float(version), temperature_range, pressure_range, 
+        output_directory='tmp', output_filename=archive_name
+    )
+    
+    return os.path.join('tmp', archive_name)
+
+
+def dace_download_atom(
+    element='Na', charge=0, linelist='Kurucz', 
+    temperature_range=[500, 5000], pressure_range=[-8, 1.5], version=1
+):
+    from dace.opacity import Atom
+    os.makedirs('tmp', exist_ok=True)
+    archive_name = element + '__' + linelist + '.tar.gz'
+    Atom.download(
+        element, charge, linelist, float(version), temperature_range, pressure_range, 
+        output_directory='tmp', output_filename=archive_name
+    )
+    
+    return os.path.join('tmp', archive_name)
+
+
+def untar_bin_files(archive_name):
+    def bin_files(members):
+        for tarinfo in members:
+            if os.path.splitext(tarinfo.name)[1] == ".bin":
+                yield tarinfo
+
+    with tarfile.open(archive_name, 'r:gz') as tar:
+        tar.extractall(path='tmp/.', members=bin_files(tar))
+
+
+def get_opacity_dir_path_molecule(archive_name, isotopologue, linelist):
+    return glob(os.path.join('tmp', isotopologue + '__' + linelist + "*e2b"))[0]
+
+
+def get_opacity_dir_path_atom(linelist):
+    return glob(os.path.join('tmp', linelist + "*e2b"))[0]
+
+
+def opacity_dir_to_netcdf(opacity_dir, outpath):
+    import xarray as xr
+
+    temperature_grid = []
+    pressure_grid = []
+
+    for dirpath, dirnames, filenames in os.walk(opacity_dir): 
+        for filename in filenames: 
+            # Wavenumber points from range given in the file names
+            temperature = int(filename.split('_')[3])
+            sign = 1 if filename.split('_')[4][0] == 'p' else -1
+            pressure = 10 ** (sign * float(filename.split('_')[4][1:].split('.')[0]) / 100)
+
+            wl_start = int(filename.split('_')[1])
+            wl_end = int(filename.split('_')[2])
+            wlen = np.arange(wl_start, wl_end, 0.01)
+
+            # Convert to micron
+            wavelength = 1 / wlen / 1e-4
+
+            unique_wavelengths = wavelength[1:][::-1]
+            temperature_grid.append(temperature)
+            pressure_grid.append(pressure)
+
+    tgrid = np.sort(list(set(temperature_grid)))
+    pgrid = np.sort(list(set(pressure_grid)))
+
+    if len(pgrid) == 1:
+        extrapolate_pgrid = True
+        pgrid = np.concatenate([pgrid, 10**(-1*np.log10(pgrid))])
+    else: 
+        extrapolate_pgrid = False
+    opacity_grid = np.zeros((len(tgrid), len(pgrid), len(unique_wavelengths)), dtype='float32')
+
+    for dirpath, dirnames, filenames in os.walk(opacity_dir): 
+        for filename in filenames: 
+
+            opacity = np.fromfile(
+                os.path.join(dirpath, filename), dtype=np.float32
+            )[1:][::-1]
+
+            # Wavenumber points from range given in the file names
+            temperature = int(filename.split('_')[3])
+            sign = 1 if filename.split('_')[4][0] == 'p' else -1
+            pressure = 10 ** (sign * float(filename.split('_')[4][1:].split('.')[0]) / 100)
+
+            temperature_ind = np.argmin(np.abs(tgrid - temperature))
+            pressure_ind = np.argmin(np.abs(pgrid - pressure))
+
+            opacity_grid[temperature_ind, pressure_ind, :] = opacity
+
+    if extrapolate_pgrid:
+        for dirpath, dirnames, filenames in os.walk(opacity_dir): 
+            for filename in filenames: 
+
+                opacity = np.fromfile(
+                    os.path.join(dirpath, filename), dtype=np.float32
+                )[1:][::-1]
+
+                # Wavenumber points from range given in the file names
+                temperature = int(filename.split('_')[3])
+                # *Flip the sign for the extrapolated grid point in pressure*
+                sign = -1 if filename.split('_')[4][0] == 'p' else 1
+                pressure = 10 ** (sign * float(filename.split('_')[4][1:].split('.')[0]) / 100)
+
+                temperature_ind = np.argmin(np.abs(tgrid - temperature))
+                pressure_ind = np.argmin(np.abs(pgrid - pressure))
+
+                opacity_grid[temperature_ind, pressure_ind, :] = opacity
+            
+    ds = xr.Dataset(
+        data_vars=dict(
+            opacity=(["temperature", "pressure", "wavelength"], 
+                     opacity_grid)
+        ),
+        coords=dict(
+            temperature=(["temperature"], tgrid),
+            pressure=(["pressure"], pgrid),
+            wavelength=unique_wavelengths
+        )
+    )
+    
+    if not os.path.exists(os.path.dirname(outpath)):
+        os.makedirs(os.path.dirname(outpath), exist_ok=True)
+    
+    ds.to_netcdf(outpath if outpath.endswith(".nc") else outpath + '.nc', 
+                 encoding={'opacity': {'dtype': 'float32',  "zlib": True}})
+
+
+def clean_up(bin_dir, archive_name): 
+    os.remove(archive_name)
+    shutil.rmtree(bin_dir)
+
+
+def download_molecule(isotopologue, linelist):
+    """
+    Download molecular opacity data from DACE. 
+    
+    .. warning:: 
+        This generates *very* large files. Only run this
+        method if you have ~6 GB available per molecule.
+        
+    Parameters
+    ----------
+    isotopologue : str
+        For example, "1H2-16O" for water.
+    linelist : str
+        For example, "POKAZATEL" for water.
+    """
+    archive_name = dace_download_molecule(isotopologue, linelist)
+    untar_bin_files(archive_name)
+    bin_dir = get_opacity_dir_path_molecule(archive_name, isotopologue, linelist)
+
+    nc_path = os.path.join(os.path.expanduser('~'), '.frei', isotopologue + '__' + linelist + '.nc')
+    opacity_dir_to_netcdf(bin_dir, nc_path)
+    clean_up(bin_dir, archive_name)
+
+
+def download_atom(atom, charge, linelist):
+    """
+    Download atomic opacity data from DACE.
+
+    .. warning:: 
+        This generates *very* large files. Only run this
+        method if you have ~6 GB available per molecule.
+    
+    Parameters
+    ----------
+    atom : str
+        For example, "Na" for sodium.
+    charge : int
+        For example, 0 for neutral.
+    linelist : str
+        For example, "Kurucz".
+    """
+    archive_name = dace_download_atom(atom, charge, linelist)
+    untar_bin_files(archive_name)
+    bin_dir = get_opacity_dir_path_atom(linelist)
+    
+    nc_path = os.path.join(os.path.expanduser('~'), '.frei', atom + '_' + str(int(charge)) +'__' + linelist + '.nc')
+    opacity_dir_to_netcdf(bin_dir, nc_path)
+    clean_up(bin_dir, archive_name)

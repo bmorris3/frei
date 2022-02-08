@@ -164,7 +164,7 @@ class Grid(object):
             f"lam=[{self.lam[0]}...{self.lam[-1]}]>"
         )
     
-    def load_opacities(self, path='tmp/*.nc', opacities=None, client=None):
+    def load_opacities(self, path=None, opacities=None, client=None):
         """
         Load opacity tables from path.
 
@@ -185,7 +185,7 @@ class Grid(object):
         """
         if self.opacities is None and opacities is None:
             self.opacities = binned_opacity(
-                path, self.init_temperatures,
+                self.init_temperatures,
                 self.pressures, self.wl_bins, self.lam, client
             )
         else: 
