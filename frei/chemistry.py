@@ -134,8 +134,8 @@ def mock_fastchem_output(temperatures, pressures):
 
     class Mock_FastChemOutput(object):
         def __init__(self):
-            self.temperatures = temperatures
-            self.pressures = pressures
+            self.temperatures = temperatures[::-1]
+            self.pressures = pressures[::-1]
 
         @property
         def number_densities(self):
