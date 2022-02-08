@@ -182,10 +182,16 @@ def kappa(
         method='linear', 
         kwargs=dict(fill_value='extrapolate')
     )
-    
-    fastchem_mmr = chemistry(
-        u.Quantity([temperature]), u.Quantity([pressure]), m_bar=m_bar
-    )
+
+    if len(temperature.shape) == 0:
+        fastchem_mmr = chemistry(
+            u.Quantity([temperature]), u.Quantity([pressure]), m_bar=m_bar
+        )
+    else:
+        fastchem_mmr = chemistry(
+            temperature, pressure, m_bar=m_bar
+        )
+
     for species in opacities:
         ops.append(
             fastchem_mmr[species] * opacities[species].interp(

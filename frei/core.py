@@ -17,6 +17,7 @@ __all__ = [
     'effective_temperature'
 ]
 
+
 def dask_client(memory_limit='20 GiB'):
     """
     Launch a local cluster, return the client.
