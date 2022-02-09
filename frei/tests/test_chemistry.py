@@ -68,7 +68,7 @@ def test_max_abundances(isotopologue, abund):
 @pytest.mark.parametrize("isotopologue_name, species_name", (
     zip(['1H2-16O', 'Na', 'K', '48Ti-16O'], ["H2O", "Na", "K", "TiO"])
 ),)
-def test_chemical_names_manipulation(isotopologue_name, species_name):
+def test_chemical_names_manipulation_0(isotopologue_name, species_name):
     # Test conversion of isotopologue name, like an opacity file with "1H2-16O"
     # to what I'll call the common "species name" like H2O
     assert iso_to_species(isotopologue_name) == species_name
@@ -80,7 +80,7 @@ def test_chemical_names_manipulation(isotopologue_name, species_name):
         ['H2O1', 'O1Ti1', 'O1V1', 'Na', 'K', 'C1O1', 'Cr1H1',
          'C1F4O1', 'Al2Cl6', 'Al1F4Na1', 'Al1Cl1F2'])
 ),)
-def test_chemical_names_manipulation(species_name, fastchem_name):
+def test_chemical_names_manipulation_1(species_name, fastchem_name):
     # Test conversion of common species name to a fastchem name which can
     # be called in fastchem.getSpeciesIndex(fastchem_name)
     assert species_name_to_fastchem_name(species_name) == fastchem_name

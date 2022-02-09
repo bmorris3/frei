@@ -48,6 +48,7 @@ def species_name_to_fastchem_name(k, return_mass=False):
         return correct_notation, mass
     return correct_notation
 
+
 def chemistry(
         temperatures, pressures, species, return_vmr=False, m_bar=2.4*m_p
 ):
