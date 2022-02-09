@@ -61,6 +61,7 @@ def test_example_opacities():
         atol=0.01e13 * flux_unit
     )
 
+    # effective temperature should be close to T_ref:
     assert_quantity_allclose(
         effective_temperature(grid, spec, dtaus, temps),
         T_ref,
