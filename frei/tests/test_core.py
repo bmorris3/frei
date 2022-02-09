@@ -27,9 +27,9 @@ def test_example_opacities():
 
     op = grid.load_opacities(opacities=load_example_opacity(grid))
     # Check that the synthetic opacities are loaded into the H2O key:
-    assert "H2O" in op
+    assert "1H2-16O" in op
     for attr in ['wavelength', 'temperature', 'pressure']:
-        assert hasattr(op.get('H2O'), attr)
+        assert hasattr(op.get('1H2-16O'), attr)
 
     k, sigma_scattering = kappa(
         op,

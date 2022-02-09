@@ -3,13 +3,23 @@ import numpy as np
 from astropy.constants import k_B, m_p
 import astropy.units as u
 
+
 __all__ = [
     'chemistry'
 ]
 
+hill = {
+    'H2O': 'H2O1',
+    'TiO': 'O1Ti1',
+    'VO': 'O1V1',
+    'Na': 'Na',
+    'K': 'K',
+    'CO': 'C1O1',
+}
+
 
 def chemistry(
-        temperatures, pressures, return_vmr=False, m_bar=2.4*m_p
+        temperatures, pressures, species, return_vmr=False, m_bar=2.4*m_p
 ):
     """
     Run pyfastchem to compute chemistry throughout an atmosphere.
@@ -58,7 +68,8 @@ def chemistry(
             os.path.dirname(__file__), 'data', 'logK.dat'
         ), 0
     )
-
+    from .opacity import iso_to_mass, iso_to_species
+    
     # create the input and output structures for FastChem
     input_data = FastChemInput()
     output_data = FastChemOutput()
@@ -72,18 +83,14 @@ def chemistry(
     n_densities = np.array(output_data.number_densities) / u.cm**3
 
     gas_number_density = pressures[::-1] / (k_B * temperatures[::-1])
-    # Hill notation, common spelling, mass
-    all_species = [
-        ['H2O1', 'H2O', 16+2], 
-        ['O1Ti1', 'TiO', 16+48], 
-        ['O1V1', 'VO', 16+51], 
-        ['Na1+', 'Na', 23]
-    ]
 
     if return_vmr:
         fastchem_vmr = dict()
     fastchem_mmr = dict()
-    for i, (species_name_hill, species_name, mass) in enumerate(all_species):
+    for i, isotopologue in enumerate(species):
+        species_name = iso_to_species(isotopologue)
+        species_mass = iso_to_mass(isotopologue)
+        species_name_hill = hill.get(species_name, species_name)
         index = fastchem.getSpeciesIndex(species_name_hill)
         if index != FASTCHEM_UNKNOWN_SPECIES:
             vmr = (
@@ -94,9 +101,9 @@ def chemistry(
                 vmr = vmr[::-1]
             
             if return_vmr:
-                fastchem_vmr[species_name] = vmr
-            fastchem_mmr[species_name] = vmr * (
-                mass * m_p / m_bar
+                fastchem_vmr[isotopologue] = vmr
+            fastchem_mmr[isotopologue] = vmr * (
+                species_mass * m_p / m_bar
             ).to(u.dimensionless_unscaled).value
         else:
             print("Species", species_name, "not found in FastChem")

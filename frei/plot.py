@@ -43,6 +43,7 @@ def dashboard(
     -------
     fig, ax : ~matplotlib.axes.Figure, ~matplotlib.axes.Axes
     """
+    from .opacity import iso_to_species
     flux_unit = u.erg/u.cm**3/u.s
 
     fig = plt.figure(figsize=(12, 7))
@@ -110,13 +111,15 @@ def dashboard(
     )
 
     fastchem_mmr, fastchem_vmr = chemistry(
-        temps[:-1], pressures[:-1], return_vmr=True
+        temps[:-1], pressures[:-1], opacities.keys(), return_vmr=True
     )
 
-    for species in fastchem_vmr:
+    for isotopologue in fastchem_vmr:
+        
+        species_name = iso_to_species(isotopologue)
         ax[3].semilogy(
-            np.log10(fastchem_vmr[species]), pressures[:-1],
-            label=species.replace('2', '$_2$'), lw=2
+            np.log10(fastchem_vmr[isotopologue]), pressures[:-1],
+            label=species_name.replace('2', '$_2$'), lw=2
         )
     ax[3].legend()
     ax[3].invert_yaxis()

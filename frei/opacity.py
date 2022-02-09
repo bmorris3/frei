@@ -104,18 +104,17 @@ def binned_opacity(
     xr_kwargs = dict(chunks='auto')
     paths = glob(path)
     for i, path in enumerate(paths): 
-        species_name = iso_to_species(path.split('/')[-1].split('_')[0])
-        
+        isotopologue = path.split('/')[-1].split('_')[0]
         species_ds = xr.open_dataset(path, **xr_kwargs)
-        print(f'Loading opacity for {species_name} ' +
+        print(f'Loading opacity for {isotopologue} ' +
               f'({i+1}/{len(paths)}): group in wavelength')
         species_grouped = species_ds.groupby_bins("wavelength", wl_bins)
-        print(f'Loading opacity for {species_name} ' +
+        print(f'Loading opacity for {isotopologue} ' +
               f'({i+1}/{len(paths)}): compute exact k-distributions')
         species_binned = delayed_map_exact_concat(
             species_grouped, temperatures, pressures, lam, client
         )
-        results[species_name] = species_binned
+        results[isotopologue] = species_binned
         
         del species_ds, species_grouped
     return results
@@ -190,11 +189,11 @@ def kappa(
 
     if len(temperature.shape) == 0:
         fastchem_mmr = chemistry(
-            u.Quantity([temperature]), u.Quantity([pressure]), m_bar=m_bar
+            u.Quantity([temperature]), u.Quantity([pressure]), opacities.keys(), m_bar=m_bar
         )
     else:
         fastchem_mmr = chemistry(
-            temperature, pressure, m_bar=m_bar
+            temperature, pressure, opacities.keys(), m_bar=m_bar
         )
 
     for species in opacities:
@@ -273,15 +272,17 @@ def load_example_opacity(grid, seed=42):
     simple_opacities[:] += 10**(2.5 * (so.value - 0.4))
 
     # Save this fake opacity grid to the water key in the opacity dictionary
-    op = dict(H2O=xr.DataArray(
-        simple_opacities, 
-        dims=['pressure', 'temperature', 'wavelength'], 
-        coords=dict(
-            pressure=grid.pressures, 
-            temperature=grid.init_temperatures, 
-            wavelength=grid.lam.to(u.um).value
+    op = {
+        "1H2-16O": xr.DataArray(
+            simple_opacities, 
+            dims=['pressure', 'temperature', 'wavelength'], 
+            coords=dict(
+                pressure=grid.pressures, 
+                temperature=grid.init_temperatures, 
+                wavelength=grid.lam.to(u.um).value
+            )
         )
-    ))
+    }
     
     return op
 
@@ -294,7 +295,23 @@ def iso_to_species(isotopologue):
     for element in isotopologue.split('-'):
         for s in re.findall(r'\D+\d*', element):
             species += ''.join(s)
-    return species
+    return species if len(species) > 0 else isotopologue
+
+
+def iso_to_mass(isotopologue):
+    """
+    Take 1H2-16O and turn it to 18, or take 48Ti-16O and turn it to 64
+    """
+    from periodictable import elements
+    mass = 0
+    for element in isotopologue.split('-'):
+        multiples = list(filter(lambda x: len(x) > 0, re.split(r'\D', element)))
+        if len(multiples) > 1: 
+            species_mass, multiplier = multiples
+            mass += float(multiplier) * float(species_mass)
+        elif len(multiples) == 1: 
+            mass += float(multiples[0])
+    return mass if mass != 0 else getattr(elements, isotopologue).mass
 
 
 def dace_download_molecule(
