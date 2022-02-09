@@ -349,7 +349,7 @@ def emit(
             dT = u.Quantity(temperature_changes)
             temperature_history[:, j + 1] = temps - dT
 
-            # Stop iterating if T-p profile changes by <10 K
+            # Stop iterating if T-p profile changes by <convergence_thresh
             if np.abs(dT).max() < convergence_thresh:
                 break
 

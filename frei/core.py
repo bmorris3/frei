@@ -219,7 +219,7 @@ class Grid(object):
 
         return self.opacities
 
-    def emission_spectrum(self, n_timesteps=50):
+    def emission_spectrum(self, n_timesteps=1, convergence_thresh=10 * u.K):
         """
         Compute the emission spectrum for this grid.
 
@@ -227,7 +227,10 @@ class Grid(object):
         ----------
         n_timesteps : int
             Maximum number of timesteps to take towards radiative equilibrium
-
+        convergence_thresh : ~astropy.units.Quantity
+            When the maximum change in temperature between timesteps is less than
+            ``convergence_thresh``, accept this timestep as "converged".
+            
         Returns
         -------
         spec : specutils.Spectrum1D
@@ -251,7 +254,8 @@ class Grid(object):
             F_TOA=F_toa, 
             g=self.planet.g, 
             m_bar=self.planet.m_bar,
-            n_timesteps=n_timesteps
+            n_timesteps=n_timesteps,
+            convergence_thresh=convergence_thresh
         )
         return (
             Spectrum1D(flux=F_2_up, spectral_axis=self.lam), 

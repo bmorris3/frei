@@ -105,7 +105,8 @@ def dashboard(
                    xycoords='axes fraction')
     ax[2].annotate("Final", (0.1, 0.1), xycoords='axes fraction')
     ax[2].set(
-        xlabel='Temperature [K]', ylabel='Pressure [bar]'
+        xlabel='Temperature [K]', ylabel='Pressure [bar]',
+        ylim=ax[1].get_ylim()
     )
 
     fastchem_mmr, fastchem_vmr = chemistry(
@@ -121,7 +122,8 @@ def dashboard(
     ax[3].invert_yaxis()
     ax[3].set(
         xlabel='log(VMR)', ylabel='Pressure [bar]',
-        title='Chemistry (FastChem)'
+        title='Chemistry (FastChem)',
+        ylim=ax[1].get_ylim()
     )
 
     k, sigma_scattering = kappa(
