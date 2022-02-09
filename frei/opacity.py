@@ -198,11 +198,23 @@ def kappa(
         )
 
     for species in opacities:
+        
+        interp_point = dict()
+        
+        # If there is >1 temperature, interpolate over T;
+        # if there is only 1 temperature, don't interpolate over T
+        if len(np.unique(opacities[species].temperature)) > 1:
+            interp_point['temperature'] = temperature.value
+                 
+        interp_point['pressure'] = pressure.to(u.bar).value
+
+        opacity = fastchem_mmr[species] * opacities[species].interp(
+            interp_point, **interp_kwargs
+        ).values * u.cm**2 / u.g
+        
         ops.append(
-            fastchem_mmr[species] * opacities[species].interp(
-                dict(temperature=temperature.value,
-                     pressure=pressure.to(u.bar).value),
-            **interp_kwargs).values * u.cm**2 / u.g
+            # If there are multiple entries for the sample temperature, take the zeroth
+            opacity if len(opacity.shape) < 2 else opacity[0]
         )
 
     return u.Quantity(ops).sum(axis=0), sigma_scattering

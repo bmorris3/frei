@@ -30,11 +30,12 @@ def dask_client(memory_limit='20 GiB'):
     return client
 
 
-def wavelength_grid(min_micron=0.5, max_micron=10, n_bins=500):
+def wavelength_grid(min_micron=0.5, max_micron=10, n_bins=500, lam=None):
     """
     Compute a log-spaced wavelength grid.
     """
-    lam = np.logspace(np.log10(min_micron), np.log10(max_micron), n_bins) * u.um
+    if lam is None: 
+        lam = np.logspace(np.log10(min_micron), np.log10(max_micron), n_bins) * u.um
     wl_bins = np.concatenate([
         [(lam.min() - (lam[1] - lam[0])).to(u.um).value], 
         lam.to(u.um).value]
@@ -106,22 +107,33 @@ class Grid(object):
     """
     @u.quantity_input(
         lam_min=u.um, lam_max=u.um, P_toa=u.bar, P_boa=u.bar,
-        T_ref=u.K, P_ref=u.bar
+        T_ref=u.K, P_ref=u.bar, lam=u.cm, pressures=u.bar, init_temperatures=u.K
     )
     def __init__(
         self, planet,
+        lam=None, pressures=None, init_temperatures=None,
         # Wavelength grid:
         lam_min=0.5 * u.um, lam_max=10 * u.um, n_wl_bins=500,
         # Pressure grid: 
         P_toa=1e-6 * u.bar, P_boa=200 * u.bar, n_layers=30,
         # Initial temperature grid:
-        T_ref=2300 * u.K, P_ref=0.1 * u.bar
+        T_ref=2300 * u.K, P_ref=0.1 * u.bar, alpha=0.1
     ):
         """
+        If ``lam``, ``pressures``, or ``init_temperatures`` are None, 
+        frei use the remaining keyword arguments to produce each grid.
+        
+        
         Parameters
         ----------
         planet : ~frei.Planet
             Planet object associated with this grid.
+        lam : ~astropy.units.Quantity or None (optional)
+            Wavelength grid
+        pressures : ~astropy.units.Quantity or None (optional)
+            Pressure grid
+        init_temperatures : ~astropy.units.Quantity or None (optioonal)
+            Initial temperature grid at each pressure
         lam_min : ~astropy.units.Quantity
             Minimum wavelength.
         lam_max : ~astropy.units.Quantity
@@ -138,22 +150,35 @@ class Grid(object):
             Reference temperature at reference pressure
         P_ref : ~astropy.units.Quantity
             Reference pressure
+        alpha : float (default = 0.1)
+            Power law index of initial guess T-p profile 
         """
         self.planet = planet
-        self.lam, self.wl_bins, self.R = wavelength_grid(
-            min_micron=lam_min.to(u.um).value,
-            max_micron=lam_max.to(u.um).value,
-            n_bins=n_wl_bins
-        )
-        
-        self.pressures = pressure_grid(
-            n_layers=n_layers, P_toa=np.log10(P_toa.to(u.bar).value),
-            P_boa=np.log10(P_boa.to(u.bar).value)
-        )
-
-        self.init_temperatures = temperature_grid(
-            self.pressures, T_ref, P_ref
-        )
+        if lam is None:
+            self.lam, self.wl_bins, self.R = wavelength_grid(
+                min_micron=lam_min.to(u.um).value,
+                max_micron=lam_max.to(u.um).value,
+                n_bins=n_wl_bins
+            )
+        else: 
+            self.lam, self.wl_bins, self.R = wavelength_grid(
+                lam=lam
+            )
+            
+        if pressures is None:
+            self.pressures = pressure_grid(
+                n_layers=n_layers, P_toa=np.log10(P_toa.to(u.bar).value),
+                P_boa=np.log10(P_boa.to(u.bar).value)
+            )
+        else: 
+            self.pressures = pressures
+            
+        if init_temperatures is None:
+            self.init_temperatures = temperature_grid(
+                self.pressures, T_ref, P_ref, alpha
+            )
+        else: 
+            self.init_temperatures = init_temperatures
         
         self.opacities = None
         
