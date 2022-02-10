@@ -34,7 +34,7 @@ def iso_to_mass(isotopologue):
             mass += float(multiplier) * float(species_mass)
         elif len(multiples) == 1: 
             mass += float(multiples[0])
-    return mass if mass != 0 else getattr(elements, isotopologue).mass
+    return (mass if mass != 0 else getattr(elements, isotopologue).mass) * u.u
 
 
 def species_name_to_fastchem_name(k, return_mass=False):
@@ -76,7 +76,7 @@ def species_name_to_fastchem_name(k, return_mass=False):
     return correct_notation
 
 
-def species_name_to_common_isotopologue_name(k, return_mass=False):
+def species_name_to_common_isotopologue_name(k):
     """
     Convert generic species name, like "H20", to
     isotopologue name like "1H2-16O" . Also return the total
@@ -195,7 +195,7 @@ def chemistry(
             if return_vmr:
                 fastchem_vmr[isotopologue] = vmr
             fastchem_mmr[isotopologue] = vmr * (
-                species_mass * m_p / m_bar
+                species_mass / m_bar
             ).to(u.dimensionless_unscaled).value
         else:
             print("Species", species_name, "not found in FastChem")

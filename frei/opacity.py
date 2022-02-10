@@ -1,4 +1,3 @@
-import re
 import os
 import tarfile
 import shutil
