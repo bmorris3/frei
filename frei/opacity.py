@@ -287,33 +287,6 @@ def load_example_opacity(grid, seed=42):
     return op
 
 
-def iso_to_species(isotopologue):
-    """
-    Take 1H2-16O and turn it to H2O, or take 48Ti-16O and turn it to TiO
-    """
-    species = ""
-    for element in isotopologue.split('-'):
-        for s in re.findall(r'\D+\d*', element):
-            species += ''.join(s)
-    return species if len(species) > 0 else isotopologue
-
-
-def iso_to_mass(isotopologue):
-    """
-    Take 1H2-16O and turn it to 18, or take 48Ti-16O and turn it to 64
-    """
-    from periodictable import elements
-    mass = 0
-    for element in isotopologue.split('-'):
-        multiples = list(filter(lambda x: len(x) > 0, re.split(r'\D', element)))
-        if len(multiples) > 1: 
-            species_mass, multiplier = multiples
-            mass += float(multiplier) * float(species_mass)
-        elif len(multiples) == 1: 
-            mass += float(multiples[0])
-    return mass if mass != 0 else getattr(elements, isotopologue).mass
-
-
 def dace_download_molecule(
     isotopologue='48Ti-16O', linelist='Toto', 
     temperature_range=[500, 5000], pressure_range=[-6, 1.5], version=1

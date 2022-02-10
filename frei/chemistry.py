@@ -10,6 +10,33 @@ __all__ = [
 ]
 
 
+def iso_to_species(isotopologue):
+    """
+    Take 1H2-16O and turn it to H2O, or take 48Ti-16O and turn it to TiO
+    """
+    species = ""
+    for element in isotopologue.split('-'):
+        for s in re.findall(r'\D+\d*', element):
+            species += ''.join(s)
+    return species if len(species) > 0 else isotopologue
+
+
+def iso_to_mass(isotopologue):
+    """
+    Take 1H2-16O and turn it to 18, or take 48Ti-16O and turn it to 64
+    """
+    from periodictable import elements
+    mass = 0
+    for element in isotopologue.split('-'):
+        multiples = list(filter(lambda x: len(x) > 0, re.split(r'\D', element)))
+        if len(multiples) > 1: 
+            species_mass, multiplier = multiples
+            mass += float(multiplier) * float(species_mass)
+        elif len(multiples) == 1: 
+            mass += float(multiples[0])
+    return mass if mass != 0 else getattr(elements, isotopologue).mass
+
+
 def species_name_to_fastchem_name(k, return_mass=False):
     """
     Convert generic species name, like "H20" or "ClAlF2", to
@@ -46,6 +73,41 @@ def species_name_to_fastchem_name(k, return_mass=False):
             mass += getattr(elements, atom).mass * mult
 
         return correct_notation, mass
+    return correct_notation
+
+
+def species_name_to_common_isotopologue_name(k, return_mass=False):
+    """
+    Convert generic species name, like "H20", to
+    isotopologue name like "1H2-16O" . Also return the total
+    mass of the species by summing the masses of its components.
+    """
+    from periodictable import elements
+
+    atoms = np.array(list(filter(
+        lambda x: len(x) > 0, re.split(r"(?<=[a-z])|(?=[A-Z])|\d", k)
+    )))
+
+    multipliers = np.array([
+        int(x) if len(x) > 0 else 1 for x in re.split(r'\D', k)
+    ])
+    lens = [len(''.join(atom)) for atom in atoms]
+    multipliers_skipped = np.array([multipliers[cs] for cs in np.cumsum(lens)])
+
+    masses = np.array([
+        round(getattr(elements, atom).mass) for atom, mult in zip(atoms, multipliers_skipped)
+    ])
+    
+    if len(atoms) > 1:
+        correct_notation = '-'.join([
+            str(mass) + a + (str(mult) if mult > 1 else '') 
+            for a, mult, mass in zip(atoms, multipliers_skipped, masses)
+        ])
+
+    # If single atom, give only the name of the atom:
+    else: 
+        correct_notation = atoms[0]
+    
     return correct_notation
 
 
@@ -99,7 +161,6 @@ def chemistry(
             os.path.dirname(__file__), 'data', 'logK.dat'
         ), 0
     )
-    from .opacity import iso_to_mass, iso_to_species
     
     # create the input and output structures for FastChem
     input_data = FastChemInput()

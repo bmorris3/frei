@@ -43,7 +43,7 @@ def dashboard(
     -------
     fig, ax : ~matplotlib.axes.Figure, ~matplotlib.axes.Axes
     """
-    from .opacity import iso_to_species
+    from .chemistry import iso_to_species
     flux_unit = u.erg/u.cm**3/u.s
 
     fig = plt.figure(figsize=(12, 7))
