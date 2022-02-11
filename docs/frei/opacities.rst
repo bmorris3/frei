@@ -22,7 +22,7 @@ The current behavior that is triggered is:
 .. note::
 
     These functions require the DACE python client, available from pip via
-    ``pip install python-dace-client``
+    ``python -m pip install python-dace-client``
 
 .. code-block:: python
 
@@ -33,7 +33,7 @@ The current behavior that is triggered is:
     isotopologues = ['48Ti-16O', '1H2-16O', '51V-16O']
     linelists = ['Toto', 'POKAZATEL', 'VOMYT']
 
-    for isotopologue, linelist in zip(isotopologues, linelists)
+    for isotopologue, linelist in zip(isotopologues, linelists):
         download_molecule(isotopologue, linelist)
 
     # File download size: 300 MB
