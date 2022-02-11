@@ -40,6 +40,7 @@ def mapfunc_exact(
     Delta_x = wl.max() - wl.min()
     return op.integrate('wavelength').expand_dims(dict(wavelength=[wl.mean()])) / Delta_x
 
+
 def delayed_map_exact_concat(grouped, temperatures, pressures, lam, client):
     import dask
     results = []
@@ -107,8 +108,14 @@ def binned_opacity(
             iso_to_species(path.split('/')[-1].split('_')[0]) for path in paths
         ]
 
-    fetch_paths = [path for path in paths if iso_to_species(path.split('/')[-1].split('_')[0]) in species]
-    fetch_species = [iso_to_species(path.split('/')[-1].split('_')[0]) for path in fetch_paths]
+    fetch_paths = [
+        path for path in paths 
+        if iso_to_species(path.split('/')[-1].split('_')[0]) in species
+    ]
+    fetch_species = [
+        iso_to_species(path.split('/')[-1].split('_')[0]) 
+        for path in fetch_paths
+    ]
 
     results = dict()    
     xr_kwargs = dict(chunks='auto')

@@ -353,7 +353,6 @@ def emit(
             if np.abs(dT).max() < convergence_thresh:
                 break
 
-
     if plot:
         from astropy.visualization import quantity_support
         import matplotlib.pyplot as plt
