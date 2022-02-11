@@ -55,7 +55,7 @@ def dashboard(
     with quantity_support():
         if np.any(binned_phoenix_spectrum.value != 0):
             ax[0].loglog(
-                lam, binned_phoenix_spectrum, color='C1', label='PHOENIX'
+                lam, binned_phoenix_spectrum.to(flux_unit), color='C1', label='PHOENIX'
             )
         ax[0].loglog(lam, F_2_up.to(flux_unit), color='C0', label='frei')
 
@@ -107,7 +107,6 @@ def dashboard(
     ax[2].annotate("Final", (0.1, 0.1), xycoords='axes fraction')
     ax[2].set(
         xlabel='Temperature [K]', ylabel='Pressure [bar]',
-        ylim=ax[1].get_ylim()
     )
 
     fastchem_mmr, fastchem_vmr = chemistry(
@@ -130,7 +129,7 @@ def dashboard(
     )
 
     k, sigma_scattering = kappa(
-        opacities, np.interp(1 * u.bar, pressures, temps), 1 * u.bar, lam
+        opacities, np.interp(1 * u.bar, pressures[::-1], temps[::-1]), 1 * u.bar, lam
     )
     with quantity_support():
         ax[4].loglog(lam, k.to(u.cm ** 2 / u.g), label='Total')

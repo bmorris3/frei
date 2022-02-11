@@ -1,7 +1,7 @@
 import astropy.units as u
 import numpy as np
 from astropy.constants import k_B, m_p, h, c, sigma_sb
-from tqdm import tqdm
+from tqdm.auto import trange
 
 from .opacity import kappa
 
@@ -17,7 +17,7 @@ def bolometric_flux(flux, lam):
     """
     Compute bolometric flux from wavelength-dependent flux
     """
-    return flux.to(flux_unit * u.cm, u.spectral_density(lam)).sum()
+    return np.trapz(flux, lam)
 
 
 def delta_t_i(p_1, p_2, T_1, delta_F_i_dz, g, m_bar=2.4 * m_p):
@@ -28,8 +28,7 @@ def delta_t_i(p_1, p_2, T_1, delta_F_i_dz, g, m_bar=2.4 * m_p):
     """
     dz = delta_z_i(T_1, p_1, p_2, g, m_bar)
     # Malik 2017 Eqn 28
-    # f_i_pre = 1e5 / (abs(delta_F_i_dz * dz) / (u.erg/u.cm**2/u.s))**0.9
-    f_i_pre = 2e5 / (abs(delta_F_i_dz * dz) / (u.erg / u.cm ** 2 / u.s)) ** 0.9
+    f_i_pre = 1e5 / (abs(delta_F_i_dz * dz) / (u.erg/u.cm**2/u.s))**0.9
     # Malik 2017 Eqn 27
     return f_i_pre * c_p(m_bar) * p_1 / sigma_sb / g / T_1 ** 3
 
@@ -124,9 +123,6 @@ def propagate_fluxes(
     F_2_up, F_1_down : ~astropy.units.Quantity
         Fluxes up from layer 2, and down to layer 1
     """
-    # Malik 2017 Equation 6
-    # T = (1 - delta_tau) * np.exp(-delta_tau) + delta_tau**2 * exp1(delta_tau)
-
     # Deitrick 2020 Equation B2
     T = np.exp(-2 * (E(omega_0, g_0) * (E(omega_0, g_0) - omega_0) *
                      (1 - omega_0 * g_0)) ** 0.5 * delta_tau)
@@ -138,31 +134,32 @@ def propagate_fluxes(
                              (1 - omega_0 * g_0)) ** 0.5)
 
     # Malik 2017 Equation 12
-    alpha = zeta_minus ** 2 * T ** 2 - zeta_plus ** 2
-    beta = zeta_plus * zeta_minus * (1 - T ** 2)
-    xi = (zeta_minus ** 2 - zeta_plus ** 2) * T
+    chi = zeta_minus ** 2 * T ** 2 - zeta_plus ** 2
+    xi = zeta_plus * zeta_minus * (1 - T ** 2)
+    psi = (zeta_minus ** 2 - zeta_plus ** 2) * T
+    pi = np.pi * (1 - omega_0) / (E(omega_0, g_0) - omega_0)
     # nu = (zeta_minus**2 * T + zeta_plus**2) * (1 - T)
-    pi_sr = np.pi
 
+    B1 = BB(T_1)(lam)
+    B2 = BB(T_1)(lam)
     # Malik 2017 Equation 5
-    def Bprime(lam):
-        return (BB(T_2)(lam) - BB(T_1)(lam)) / delta_tau
+    Bprime = (B2 - B1) / delta_tau
 
-    # Malik 2017 Equation 15, corrected from Dietrick 2022 Eqn B4
+    # Deitrick 2022 Eqn B4
     F_2_up = (
-        1 / alpha * (
-        xi * F_1_up - beta * F_2_down +
-        2 * pi_sr * eps * (BB(T_1)(lam) * (alpha + beta) -
-                           BB(T_2)(lam) * xi + (eps / (1 - omega_0 * g_0)) *
-                           Bprime(lam) * (alpha - xi - beta))
+        1 / chi * (
+            psi * F_1_up - xi * F_2_down +
+            pi * (B2 * (chi + xi) - psi * B1 +
+            Bprime / (2 * E(omega_0, g_0) * (1 - omega_0 * g_0)) *
+            (chi - psi - xi))
         )
     )
     F_1_down = (
-        1 / alpha * (
-        xi * F_2_down - beta * F_1_up +
-        2 * pi_sr * eps * (BB(T_2)(lam) * (alpha + beta) -
-                           BB(T_1)(lam) * xi + (eps / (1 - omega_0 * g_0)) *
-                           Bprime(lam) * (xi - alpha + beta))
+        1 / chi * (
+            psi * F_2_down - xi * F_1_up +
+            pi * (B1 * (chi + xi) - psi * B2 +
+            Bprime / (2 * E(omega_0, g_0) * (1 - omega_0 * g_0)) *
+            (xi + psi - chi))
         )
     )
     return F_2_up, F_1_down
@@ -199,8 +196,8 @@ def delta_temperature(
 
     Defined in Malik et al. (2017) Equation 24
     """
-    return 1 / rho_p(p_1, p_2, T_1, g, m_bar) / c_p(m_bar,
-                                                    n_dof) * div * delta_t_i
+    return (1 / rho_p(p_1, p_2, T_1, g, m_bar) / 
+            c_p(m_bar, n_dof) * div * delta_t_i)
 
 
 def c_p(m_bar=2.4 * m_p, n_dof=5):
@@ -272,7 +269,7 @@ def emit(
     temperature_history[:, 0] = temperatures.copy()
 
     if n_timesteps > 1:
-        timestep_iterator = tqdm(np.arange(n_timesteps))
+        timestep_iterator = trange(n_timesteps)
 
     else:
         timestep_iterator = np.arange(n_timesteps)
@@ -290,7 +287,7 @@ def emit(
                 p_1 = pressures[i]
                 T_2 = temps[i + 1]
                 T_1 = temps[i]
-                F_1_up = np.pi * BB(2 * T_1)(lam)  # BOA
+                F_1_up = np.pi * BB(T_1)(lam)  # BOA
                 F_2_down = np.pi * BB(T_2)(lam)
 
             elif i < len(pressures) - 1:
@@ -343,15 +340,19 @@ def emit(
                 delta_F_i_dz, p_1, p_2, T_1, dt, g
             ).decompose()
 
-        temperature_history[:, j] = temps
-
         if n_timesteps > 1:
             dT = u.Quantity(temperature_changes)
+
             temperature_history[:, j + 1] = temps - dT
+
+            timestep_iterator.set_description(
+                f"max|∆T|= {np.abs(dT).max():.1f}"
+            )
 
             # Stop iterating if T-p profile changes by <convergence_thresh
             if np.abs(dT).max() < convergence_thresh:
                 break
+
 
     if plot:
         from astropy.visualization import quantity_support

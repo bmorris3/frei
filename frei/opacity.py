@@ -2,6 +2,7 @@ import os
 import tarfile
 import shutil
 from glob import glob
+from tqdm import tqdm
 import numpy as np
 import astropy.units as u
 from astropy.constants import m_p
@@ -37,14 +38,7 @@ def mapfunc_exact(
     ).opacity
     
     Delta_x = wl.max() - wl.min()
-    result = xr.apply_ufunc(
-        np.trapz, op, wl, dask='allowed',
-        input_core_dims=[["temperature", "pressure", "wavelength"],
-                         ["wavelength"]],
-        output_core_dims=[["temperature", "pressure"]],
-    ) / Delta_x
-    return result.expand_dims(dict(wavelength=[wl.mean()]))
-
+    return op.integrate('wavelength').expand_dims(dict(wavelength=[wl.mean()])) / Delta_x
 
 def delayed_map_exact_concat(grouped, temperatures, pressures, lam, client):
     import dask
@@ -71,7 +65,7 @@ def delayed_map_exact_concat(grouped, temperatures, pressures, lam, client):
 
 
 def binned_opacity(
-    temperatures, pressures, wl_bins, lam, client, path=None
+    temperatures, pressures, wl_bins, lam, client, species=None, path=None
 ):
     """
     Compute opacity for all available species, binned to wavelengths lam.
@@ -90,31 +84,47 @@ def binned_opacity(
         Wavelength bin centers
     client : None or ~dask.distributed.client.Client
         Client for distributed dask computation on opacity tables
+    path : str (optional)
+        Path to opacity files.
+    species : list or None (optional)
+        List of species to load. If None, load all available.
     
     Returns
     -------
     op : dict
         Opacity tables for each species
     """
+    from .chemistry import iso_to_species
+
     if path is None: 
         path = os.path.join(os.path.expanduser('~'), '.frei', '*.nc')
-        
+
+    paths = glob(path)
+
+    if species is None:
+        # Get all species names
+        species = [
+            iso_to_species(path.split('/')[-1].split('_')[0]) for path in paths
+        ]
+
+    fetch_paths = [path for path in paths if iso_to_species(path.split('/')[-1].split('_')[0]) in species]
+    fetch_species = [iso_to_species(path.split('/')[-1].split('_')[0]) for path in fetch_paths]
+
     results = dict()    
     xr_kwargs = dict(chunks='auto')
-    paths = glob(path)
-    for i, path in enumerate(paths): 
-        isotopologue = path.split('/')[-1].split('_')[0]
-        species_ds = xr.open_dataset(path, **xr_kwargs)
-        print(f'Loading opacity for {isotopologue} ' +
-              f'({i+1}/{len(paths)}): group in wavelength')
+
+    pbar = tqdm(zip(fetch_species, fetch_paths), total=len(fetch_paths))
+
+    for species_name, species_path in pbar:
+        isotopologue = species_path.split('/')[-1].split('_')[0]
+        species_ds = xr.open_dataset(species_path, **xr_kwargs)
+        pbar.set_description(f'Loading opacity for {isotopologue}')
         species_grouped = species_ds.groupby_bins("wavelength", wl_bins)
-        print(f'Loading opacity for {isotopologue} ' +
-              f'({i+1}/{len(paths)}): compute exact k-distributions')
         species_binned = delayed_map_exact_concat(
             species_grouped, temperatures, pressures, lam, client
         )
         results[isotopologue] = species_binned
-        
+
         del species_ds, species_grouped
     return results
 
@@ -245,7 +255,7 @@ def load_example_opacity(grid, seed=42):
 
     so = (
         # Broad infrared opacity
-        np.exp(-0.5 * (grid.lam - 4 * u.um)**2 / (2 * u.um)**2) + 
+        np.exp(-0.5 * (grid.lam - 6 * u.um)**2 / (2 * u.um)**2) + 
         # Broad optical opacity
         0.8 * np.exp(-0.5 * (grid.lam - 0.3 * u.um)**2 / (0.5 * u.um)**2)
     )
@@ -268,7 +278,7 @@ def load_example_opacity(grid, seed=42):
             -0.5 * (grid.lam - wl_micron * u.um)**2 / (0.13 * u.um)**2
         )
     
-    simple_opacities[:] += 10**(2.5 * (so.value - 0.4))
+    simple_opacities[:] += 5 * 10**(2.5 * (so.value - 0.4))
 
     # Save this fake opacity grid to the water key in the opacity dictionary
     op = {

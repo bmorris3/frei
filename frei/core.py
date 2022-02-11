@@ -18,15 +18,15 @@ __all__ = [
 ]
 
 
-def dask_client(memory_limit='20 GiB'):
+def dask_client(cluster_kwargs=dict(), client_kwargs=dict()):
     """
     Launch a local cluster, return the client.
     """
     from dask.distributed import Client, LocalCluster
     cluster = LocalCluster(
-        memory_limit=memory_limit
+        **cluster_kwargs
     )
-    client = Client(cluster)
+    client = Client(cluster, **client_kwargs)
     return client
 
 
@@ -190,12 +190,14 @@ class Grid(object):
             f"lam=[{self.lam[0]}...{self.lam[-1]}]>"
         )
     
-    def load_opacities(self, path=None, opacities=None, client=None):
+    def load_opacities(self, species=None, path=None, opacities=None, client=None):
         """
         Load opacity tables from path.
 
         Parameters
         ----------
+        species : list or None (optional)
+            List of species to load. If None, load all available.
         path : str
             Path passed to ~glob.glob to find opacity netCDF files.
         opacities : None or dict (optional)
@@ -212,7 +214,8 @@ class Grid(object):
         if self.opacities is None and opacities is None:
             self.opacities = binned_opacity(
                 self.init_temperatures,
-                self.pressures, self.wl_bins, self.lam, client
+                self.pressures, self.wl_bins, self.lam, client, 
+                species
             )
         else: 
             self.opacities = opacities

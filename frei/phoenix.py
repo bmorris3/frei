@@ -11,17 +11,10 @@ __all__ = [
 
 
 def resolution(group):
-    wl = group.wavelength
-    op = group.values
-    
-    wl_values = wl.values
-    Delta_x = wl_values.max() - wl_values.min()
-    result = np.trapz(op, wl.values) / Delta_x
-    return xr.DataArray(data=result, 
-                        dims=group.dims, 
-                        coords=dict(
-                            wavelength=[wl_values.mean()],
-                        ), name='opacity')
+    Delta_x = group.wavelength.max() - group.wavelength.min()
+    return group.integrate('wavelength').expand_dims(
+        dict(wavelength=[group.wavelength.mean()])
+    ) / Delta_x
 
 
 def get_binned_phoenix_spectrum(T_eff, g, wl_bins, lam, cache=True):
