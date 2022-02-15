@@ -7,7 +7,7 @@ from .opacity import kappa
 
 __all__ = [
     'propagate_fluxes',
-    'emit'
+    'emit', 'absorb'
 ]
 
 flux_unit = u.erg / u.s / u.cm ** 3
@@ -20,7 +20,7 @@ def bolometric_flux(flux, lam):
     return np.trapz(flux, lam)
 
 
-def delta_t_i(p_1, p_2, T_1, delta_F_i_dz, g, m_bar=2.4 * m_p):
+def delta_t_i(p_1, p_2, T_1, T_2, delta_F_i_dz, g, m_bar=2.4 * m_p, n_dof=5):
     """
     Timestep in iteration for radiative equilibrium.
 
@@ -28,9 +28,19 @@ def delta_t_i(p_1, p_2, T_1, delta_F_i_dz, g, m_bar=2.4 * m_p):
     """
     dz = delta_z_i(T_1, p_1, p_2, g, m_bar)
     # Malik 2017 Eqn 28
-    f_i_pre = 1e5 / (abs(delta_F_i_dz * dz) / (u.erg/u.cm**2/u.s))**0.9
+    
+    if (delta_F_i_dz * dz).value != 0:
+        f_i_pre = 1e5 / (abs(delta_F_i_dz * dz) / (u.erg/u.cm**2/u.s))**0.9
+    else: 
+        f_i_pre = 1
     # Malik 2017 Eqn 27
-    return f_i_pre * c_p(m_bar) * p_1 / sigma_sb / g / T_1 ** 3
+    dt_radiative = c_p(m_bar=m_bar, n_dof=n_dof) * p_1 / sigma_sb / g / T_1 ** 3
+    
+    d_gamma = delta_gamma(T_1, T_2, p_1, p_2, g, m_bar=m_bar, n_dof=n_dof)
+    if d_gamma > 0 * u.K / u.km:
+        dt_convective = (T_1 / g / d_gamma) ** 0.5
+        return f_i_pre * min(dt_radiative, dt_convective)
+    return f_i_pre * dt_radiative
 
 
 def BB(temperature):
@@ -51,7 +61,7 @@ def BB(temperature):
     # h = 6.62607015e-34  # J s
     # c = 299792458.0  # m/s
     # k_B = 1.380649e-23  # J/K
-
+    assert temperature > 0 * u.K
     return lambda wavelength: (
             2 * h * c ** 2 / np.power(wavelength, 5) /
             np.expm1(h * c / (wavelength * k_B * temperature))
@@ -121,7 +131,7 @@ def propagate_fluxes(
     Returns
     -------
     F_2_up, F_1_down : ~astropy.units.Quantity
-        Fluxes up from layer 2, and down to layer 1
+        Fluxes outgoing to layer 2, and incoming to layer 1
     """
     # Deitrick 2020 Equation B2
     T = np.exp(-2 * (E(omega_0, g_0) * (E(omega_0, g_0) - omega_0) *
@@ -138,7 +148,6 @@ def propagate_fluxes(
     xi = zeta_plus * zeta_minus * (1 - T ** 2)
     psi = (zeta_minus ** 2 - zeta_plus ** 2) * T
     pi = np.pi * (1 - omega_0) / (E(omega_0, g_0) - omega_0)
-    # nu = (zeta_minus**2 * T + zeta_plus**2) * (1 - T)
 
     B1 = BB(T_1)(lam)
     B2 = BB(T_1)(lam)
@@ -176,23 +185,28 @@ def delta_z_i(temperature_i, pressure_i, pressure_ip1, g, m_bar=2.4 * m_p):
 
 
 def div_bol_net_flux(
-    F_ip1_u, F_ip1_d, F_i_u, F_i_d, temperature_i, pressure_i, pressure_ip1,
-    g, m_bar=2.4 * m_p
+    F_ip1_u, F_ip1_d, F_i_u, F_i_d, temperature_i, temperature_ip1, pressure_i, pressure_ip1,
+    g, m_bar=2.4 * m_p, n_dof=5, alpha=1
 ):
     """
     Divergence of the bolometric net flux.
 
     Defined in Malik et al. (2017) Equation 23.
     """
-    return (((F_ip1_u - F_ip1_d) - (F_i_u - F_i_d)) /
-            delta_z_i(temperature_i, pressure_i, pressure_ip1, g, m_bar))
+    delta_F_rad = (F_ip1_u - F_ip1_d) - (F_i_u - F_i_d)
+    
+    delta_F_conv = convective_flux(temperature_i, temperature_ip1, 
+                                   pressure_i, pressure_ip1, g, 
+                                   m_bar=m_bar, n_dof=n_dof, alpha=alpha)
+    dz = delta_z_i(temperature_i, pressure_i, pressure_ip1, g, m_bar)
+    return (delta_F_rad + delta_F_conv) / dz, dz
 
 
 def delta_temperature(
         div, p_1, p_2, T_1, delta_t_i, g, m_bar=2.4 * m_p, n_dof=5
 ):
     """
-    Change in temperature in ecah layer after timestep for radiative equilibrium
+    Change in temperature in each layer after timestep for radiative equilibrium
 
     Defined in Malik et al. (2017) Equation 24
     """
@@ -221,9 +235,59 @@ def rho_p(p_1, p_2, T_1, g, m_bar=2.4 * m_p):
     return ((p_1 - p_2) / g) / delta_z_i(T_1, p_1, p_2, g, m_bar)
 
 
+def gamma(temperature_i, temperature_ip1, pressure_i, pressure_ip1, g, m_bar=2.4 * m_p):
+    """
+    Change in temperature with height
+    """
+    return (
+        (temperature_i - temperature_ip1) / 
+        delta_z_i(
+            temperature_i, pressure_i, pressure_ip1, g, m_bar=m_bar
+        )
+    )
+
+
+def gamma_adiabatic(g, m_bar=2.4 * m_p, n_dof=5):
+    return g / c_p(m_bar=m_bar, n_dof=n_dof)
+
+
+def delta_gamma(
+    temperature_i, temperature_ip1, pressure_i, pressure_ip1, g, 
+    m_bar=2.4 * m_p, n_dof=5
+):
+    dg = (
+        gamma(temperature_i, temperature_ip1, 
+              pressure_i, pressure_ip1, g, m_bar=m_bar) - 
+        gamma_adiabatic(g, m_bar=m_bar, n_dof=n_dof)
+    )
+    return dg
+
+
+def mixing_length(T_1, g, alpha=1, m_bar=2.4*m_p):
+    return alpha * k_B * T_1 / (m_bar * g)
+
+
+def convective_flux(
+    temperature_i, temperature_ip1, pressure_i, pressure_ip1, g, 
+    m_bar=2.4 * m_p, n_dof=5, alpha=1
+):
+    rho = rho_p(pressure_i, pressure_ip1, temperature_i, g, m_bar=m_bar)
+    cp = c_p(m_bar=m_bar, n_dof=n_dof)
+    lmix = mixing_length(temperature_i, g, alpha, m_bar)
+    delta_g = delta_gamma(
+        temperature_i, temperature_ip1, pressure_i, pressure_ip1, 
+        g, m_bar=m_bar, n_dof=n_dof
+    )
+    
+    if delta_g > 0 * u.K / u.km: 
+        return rho * cp * lmix**2 * (g / temperature_i)**0.5 * delta_g**1.5
+    return 0 * flux_unit * u.cm
+
+
 def emit(
-        opacities, temperatures, pressures, lam, F_TOA, g, m_bar=2.4 * m_p,
-        n_timesteps=50, plot=False, convergence_thresh=10 * u.K
+    opacities, temperatures, pressures, lam, F_TOA, g, m_bar=2.4 * m_p,
+    n_timesteps=50, convergence_thresh=10 * u.K, alpha=1, fluxes_up=None,
+    fluxes_down=None
 ):
     """
     Compute emission spectrum.
@@ -246,8 +310,6 @@ def emit(
         Mean molecular weight
     n_timesteps : int
         Maximum number of timesteps in iteration for radiative equilibrium
-    plot : bool
-        Generate plot after convergence
     convergence_thresh : ~astropy.units.Quantity
         When the maximum change in temperature between timesteps is less than
         ``convergence_thresh``, accept this timestep as "converged".
@@ -255,7 +317,7 @@ def emit(
     Returns
     -------
     F_2_up : ~astropy.units.Quantity
-        Flux emitted upwards to layer 2
+        Outgoing flux
     final_temps : ~astropy.units.Quantity
         Final temperature grid
     temperature_history : ~astropy.units.Quantity
@@ -264,10 +326,19 @@ def emit(
         Change in optical depth in final iteration
     """
     n_layers = len(pressures)
+    n_wavelengths = len(lam)
+
+    if fluxes_up is None: 
+        fluxes_up = np.zeros((n_layers, n_wavelengths)) * flux_unit
+
+    if fluxes_down is None:
+        fluxes_down = np.zeros((n_layers, n_wavelengths)) * flux_unit
+        fluxes_down[-1] = F_TOA
+    
     # from bottom of the atmosphere
     temperature_history = np.zeros((n_layers, n_timesteps + 1)) * u.K
     temperature_history[:, 0] = temperatures.copy()
-
+    
     if n_timesteps > 1:
         timestep_iterator = trange(n_timesteps)
 
@@ -275,96 +346,204 @@ def emit(
         timestep_iterator = np.arange(n_timesteps)
 
     for j in timestep_iterator:
-        dtaus = []
+        dtaus = [[1, ] * n_wavelengths]
         temps = temperature_history[:, j]
         temperature_changes = np.zeros(n_layers) * u.K
-        F_2_up = 0
 
-        for i in np.arange(n_layers):
-            if i == 0:
-                # bottom of the atmosphere
+        for i in np.arange(1, n_layers):
+            
+            if i == n_layers - 1:
+                p_2 = pressures.min() / 100
+                T_2 = temps[i]
+            else: 
                 p_2 = pressures[i + 1]
-                p_1 = pressures[i]
                 T_2 = temps[i + 1]
-                T_1 = temps[i]
-                F_1_up = np.pi * BB(T_1)(lam)  # BOA
-                F_2_down = np.pi * BB(T_2)(lam)
+            
+            p_1 = pressures[i]
+            T_1 = temps[i]
 
-            elif i < len(pressures) - 1:
-                # non-edge layers
-                p_2 = pressures[i + 1]
-                p_1 = pressures[i]
-                T_2 = temps[i + 1]
-                T_1 = temps[i]
-
-                F_1_up = F_2_up
-                F_2_down = np.pi * BB(T_2)(lam)
-
-            else:
-                # Top of the atmosphere -- this isn't right
-                p_2 = pressures[i] / (pressures[i - 1] / pressures[i])
-                p_1 = pressures[i]
-                T_2 = temps[i] / (temps[i - 1] / temps[i])
-                T_1 = temps[i]
-
-                F_1_up = F_2_up
-                F_2_down = F_TOA
             k, sigma_scattering = kappa(
                 opacities, T_1, p_1, lam, m_bar
             )
-
-            # Single scattering albedo, Deitrick (2020) Eqn 17
-            omega_0 = (
-                sigma_scattering / (sigma_scattering + k)
-            ).to(u.dimensionless_unscaled).value
 
             delta_tau = delta_tau_i(
                 k, p_1, p_2, g
             ).to(u.dimensionless_unscaled).value
             dtaus.append(delta_tau)
+            # Single scattering albedo, Deitrick (2020) Eqn 17
+            omega_0 = (
+                sigma_scattering / (sigma_scattering + k)
+            ).to(u.dimensionless_unscaled).value
 
+            if i < n_layers - 1:
+                F_2_down = fluxes_down[i + 1]
+            else: 
+                F_2_down = F_TOA
+            F_1_up = fluxes_up[i]
+            
             F_2_up, F_1_down = propagate_fluxes(
                 lam,
                 F_1_up, F_2_down, T_1, T_2,
                 delta_tau,
                 omega_0=omega_0, g_0=0
             )
+            if i < n_layers - 1: 
+                fluxes_up[i + 1] = F_2_up
+            fluxes_down[i] = F_1_down
 
-            delta_F_i_dz = div_bol_net_flux(
+            delta_F_i_dz, dz = div_bol_net_flux(
                 bolometric_flux(F_2_up, lam), bolometric_flux(F_2_down, lam),
                 bolometric_flux(F_1_up, lam), bolometric_flux(F_1_down, lam),
-                T_1, p_1, p_2, g
+                T_1, T_2, p_1, p_2, g, alpha=alpha, m_bar=m_bar
             )
-            dt = delta_t_i(p_1, p_2, T_1, delta_F_i_dz, g)
+            dt = delta_t_i(p_1, p_2, T_1, T_2, delta_F_i_dz, g, m_bar=m_bar)
+
             temperature_changes[i] = delta_temperature(
                 delta_F_i_dz, p_1, p_2, T_1, dt, g
             ).decompose()
 
+        dT = u.Quantity(temperature_changes)
+        temperature_history[:, j + 1] = temps - dT
+        converged = np.all(np.abs(dT).max() < convergence_thresh)
         if n_timesteps > 1:
-            dT = u.Quantity(temperature_changes)
-
-            temperature_history[:, j + 1] = temps - dT
-
             timestep_iterator.set_description(
-                f"max|∆T|= {np.abs(dT).max():.1f}"
+                f"max|∆T|={np.abs(dT).max():.1f}"
             )
 
             # Stop iterating if T-p profile changes by <convergence_thresh
-            if np.abs(dT).max() < convergence_thresh:
+            if converged:
                 break
 
-    if plot:
-        from astropy.visualization import quantity_support
-        import matplotlib.pyplot as plt
+    return (
+        fluxes_up, fluxes_down, temperature_history[:, j + 1], 
+        temperature_history, np.array(dtaus), dT
+    )
 
-        fig, ax = plt.subplots(1, 2, figsize=(15, 5))
-        with quantity_support():
-            ax[0].loglog(lam, F_2_up.to(flux_unit), label=p_1)
 
-            for i in range(n_timesteps):
-                color = plt.cm.viridis(i / n_timesteps)
-                ax[1].loglog(temperature_history[:, i], pressures, c=color)
-            ax[1].invert_yaxis()
+def absorb(
+    opacities, temperatures, pressures, lam, F_TOA, g, m_bar=2.4 * m_p,
+    n_timesteps=50, convergence_thresh=10 * u.K, alpha=1, fluxes_up=None,
+    fluxes_down=None
+):
+    """
+    Compute emission spectrum.
 
-        plt.legend(loc=(1, 0))
-    return F_2_up, temps, temperature_history, np.array(dtaus)
+    Parameters
+    ----------
+    opacities : dict
+        Opacity database binned to wavelength grid.
+    temperatures : ~astropy.units.Quantity
+        Temperature grid
+    pressures : ~astropy.units.Quantity
+        Pressure grid
+    lam : ~astropy.units.Quantity
+        Wavelength grid
+    F_TOA : ~astropy.units.Quantity
+        Flux at the top of the atmosphere
+    g : ~astropy.units.Quantity
+        Surface graivty
+    m_bar : ~astropy.units.Quantity
+        Mean molecular weight
+    n_timesteps : int
+        Maximum number of timesteps in iteration for radiative equilibrium
+    convergence_thresh : ~astropy.units.Quantity
+        When the maximum change in temperature between timesteps is less than
+        ``convergence_thresh``, accept this timestep as "converged".
+
+    Returns
+    -------
+    F_2_up : ~astropy.units.Quantity
+        Outgoing flux
+    final_temps : ~astropy.units.Quantity
+        Final temperature grid
+    temperature_history : ~astropy.units.Quantity
+        Grid of temperatures with dimensions (n_layers, n_timesteps)
+    dtaus : ~numpy.ndarray
+        Change in optical depth in final iteration
+    """
+    n_layers = len(pressures)
+    n_wavelengths = len(lam)
+
+    if fluxes_up is None: 
+        fluxes_up = np.zeros((n_layers, n_wavelengths)) * flux_unit
+        fluxes_up[0] = np.pi * BB(temperatures[0])(lam)
+
+    if fluxes_down is None:
+        fluxes_down = np.zeros((n_layers, n_wavelengths)) * flux_unit
+        fluxes_down[-1] = F_TOA
+
+    # from bottom of the atmosphere
+    temperature_history = np.zeros((n_layers, n_timesteps + 1)) * u.K
+    temperature_history[:, 0] = temperatures.copy()
+    
+    if n_timesteps > 1:
+        timestep_iterator = trange(n_timesteps)
+
+    else:
+        timestep_iterator = np.arange(n_timesteps)
+
+    for j in timestep_iterator:
+        dtaus = [[1, ] * n_wavelengths]
+        temps = temperature_history[:, j]
+        temperature_changes = np.zeros(n_layers) * u.K
+        
+        for i in np.arange(0, n_layers - 1)[::-1]:
+            p_2 = pressures[i + 1]
+            T_2 = temps[i + 1]
+            
+            p_1 = pressures[i]
+            T_1 = temps[i]
+
+            k, sigma_scattering = kappa(
+                opacities, T_1, p_1, lam, m_bar
+            )
+
+            delta_tau = delta_tau_i(
+                k, p_1, p_2, g
+            ).to(u.dimensionless_unscaled).value
+            dtaus.append(delta_tau)
+            # Single scattering albedo, Deitrick (2020) Eqn 17
+            omega_0 = (
+                sigma_scattering / (sigma_scattering + k)
+            ).to(u.dimensionless_unscaled).value
+
+            F_2_down = fluxes_down[i + 1]
+            F_1_up = fluxes_up[i]
+            
+            F_2_up, F_1_down = propagate_fluxes(
+                lam,
+                F_1_up, F_2_down, T_1, T_2,
+                delta_tau,
+                omega_0=omega_0, g_0=0
+            )
+ 
+            fluxes_up[i + 1] = F_2_up
+            fluxes_down[i] = F_1_down
+
+            delta_F_i_dz, dz = div_bol_net_flux(
+                bolometric_flux(F_2_up, lam), bolometric_flux(F_2_down, lam),
+                bolometric_flux(F_1_up, lam), bolometric_flux(F_1_down, lam),
+                T_1, T_2, p_1, p_2, g, alpha=alpha, m_bar=m_bar
+            )
+
+            dt = delta_t_i(p_1, p_2, T_1, T_2, delta_F_i_dz, g, m_bar=m_bar)
+            temperature_changes[i] = delta_temperature(
+                delta_F_i_dz, p_1, p_2, T_1, dt, g
+            ).decompose()
+            
+        dT = u.Quantity(temperature_changes)
+        temperature_history[:, j + 1] = temps - dT
+        converged = np.all(np.abs(dT).max() < convergence_thresh)
+        if n_timesteps > 1:
+            timestep_iterator.set_description(
+                f"max|∆T|={np.abs(dT).max():.1f}"
+            )
+
+            # Stop iterating if T-p profile changes by <convergence_thresh
+            if converged:
+                break
+
+    return (
+        fluxes_up, fluxes_down, temperature_history[:, j + 1], 
+        temperature_history, np.array(dtaus), dT
+    )

@@ -235,7 +235,7 @@ def kappa(
     return u.Quantity(ops).sum(axis=0), sigma_scattering
 
 
-def load_example_opacity(grid, seed=42):
+def load_example_opacity(grid, seed=42, scale_factor=20):
     """
     Load "example" opacity xarray. 
     
@@ -248,6 +248,10 @@ def load_example_opacity(grid, seed=42):
     ----------
     grid : ~frei.Grid
         Grid object
+    seed : int
+        Random seed for numpy
+    scale_factor : float
+        Scale up/down synthetic opacities by this factor
         
     Returns
     -------
@@ -286,14 +290,15 @@ def load_example_opacity(grid, seed=42):
         )
     
     simple_opacities[:] += 5 * 10**(2.5 * (so.value - 0.4))
-
+    simple_opacities *= scale_factor
+    
     # Save this fake opacity grid to the water key in the opacity dictionary
     op = {
         "1H2-16O": xr.DataArray(
             simple_opacities, 
             dims=['pressure', 'temperature', 'wavelength'], 
             coords=dict(
-                pressure=grid.pressures, 
+                pressure=grid.pressures.to(u.bar).value, 
                 temperature=grid.init_temperatures, 
                 wavelength=grid.lam.to(u.um).value
             )

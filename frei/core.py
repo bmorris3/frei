@@ -2,13 +2,14 @@ import numpy as np
 import astropy.units as u
 from astropy.constants import m_p, G, sigma_sb
 from specutils import Spectrum1D
+from tqdm.auto import trange 
 
 from .twostream import BB
 from .tp import pressure_grid, temperature_grid
 from .opacity import binned_opacity
 from .phoenix import get_binned_phoenix_spectrum
 from .plot import dashboard
-from .twostream import emit
+from .twostream import emit, absorb
 
 __all__ = [
     'dask_client',
@@ -67,7 +68,7 @@ class Planet(object):
     @u.quantity_input(
         m_bar=u.g, g=u.m/u.s**2, T_star=u.K
     )
-    def __init__(self, a_rstar, m_bar, g, T_star):
+    def __init__(self, a_rstar, m_bar, g, T_star, alpha):
         """
         Parameters
         ----------
@@ -79,11 +80,14 @@ class Planet(object):
             Surface gravity
         T_star : ~astropy.units.Quantity
             Stellar effective temperature
+        alpha : float
+            Number of scale heights in a mixing length
         """
         self.a_rstar = a_rstar
         self.m_bar = m_bar
         self.g = g
         self.T_star = T_star
+        self.alpha = alpha
 
     @classmethod
     def from_hot_jupiter(cls):
@@ -97,7 +101,8 @@ class Planet(object):
             a_rstar=float(0.03 * u.AU / u.R_sun), 
             m_bar=2.4*m_p,
             g=g_jup,
-            T_star=5800 * u.K
+            T_star=5800 * u.K,
+            alpha=1
         )
 
     
@@ -222,7 +227,7 @@ class Grid(object):
 
         return self.opacities
 
-    def emission_spectrum(self, n_timesteps=1, convergence_thresh=10 * u.K):
+    def emission_spectrum(self, n_timesteps=1, n_zero_crossings=2, convergence_dT=3*u.K):
         """
         Compute the emission spectrum for this grid.
 
@@ -244,25 +249,89 @@ class Grid(object):
             Grid of temperatures with dimensions (n_layers, n_timesteps)
         dtaus : numpy.ndarray
             Change in optical depth in final iteration
+        n_zero_crossings : int
+            Number of changes in sign of ∆T in each layer before 
+            considered converged
+        convergence_dT : ~astropy.units.Quantity
+            Alternatively, set the maximum change in temperature before 
+            considered converged
         """
         if self.opacities is None:
             raise ValueError("Must load opacities before computing emission spectrum.")
+        flux_unit = u.erg / u.s / u.cm**3
+        F_toa = F_TOA(self.lam, T_star=self.planet.T_star, a_rstar=self.planet.a_rstar)
+        final_temps = self.init_temperatures.copy()
+        n_layers, n_wavelengths = len(self.pressures), len(self.lam)
+        fluxes_down = np.zeros((n_layers, n_wavelengths)) * flux_unit
+        fluxes_up = np.zeros((n_layers, n_wavelengths)) * flux_unit
+        temp_hists = []
+        max_dTs = []
+        timestep_iterator = trange(n_timesteps)
         
-        F_toa = F_TOA(self.lam, T_star=self.planet.T_star)
-        F_2_up, final_temps, temperature_history, dtaus = emit(
+        for i in timestep_iterator:
+        
+            fluxes_up, fluxes_down, final_temps, temperature_history_emit, _, dT = emit(
+                opacities=self.opacities, 
+                temperatures=final_temps, 
+                pressures=self.pressures, 
+                lam=self.lam, 
+                F_TOA=F_toa, 
+                g=self.planet.g, 
+                m_bar=self.planet.m_bar,
+                n_timesteps=1,
+                alpha=self.planet.alpha,
+                fluxes_up=fluxes_up, fluxes_down=fluxes_down
+            )
+
+            fluxes_up, fluxes_down, final_temps, temperature_history_absorb, _, dT = absorb(
+                opacities=self.opacities, 
+                temperatures=final_temps, 
+                pressures=self.pressures, 
+                lam=self.lam, 
+                F_TOA=F_toa, 
+                g=self.planet.g, 
+                m_bar=self.planet.m_bar,
+                n_timesteps=1,
+                alpha=self.planet.alpha, 
+                fluxes_up=fluxes_up, fluxes_down=fluxes_down
+            )
+            
+            max_dT = np.abs(dT).max()
+            # Check for convergence with 6 sign flips in temperature history diff
+            temp_hists.append(temperature_history_absorb)
+            max_dTs.append(max_dT)
+
+            temp_hist = np.hstack(temp_hists)
+            temp_hist = temp_hist.T[temp_hist[0] != 0].T            
+            diffs = np.diff(temp_hist.value.T, axis=0)
+            conv = (np.count_nonzero(
+                np.sign(diffs[1:]) != np.sign(diffs[:-1]), axis=0
+            ) > n_zero_crossings) | (np.abs(dT) < convergence_dT)
+            timestep_iterator.set_description(
+                f"max|∆T|={max_dT:.1f}; conv = {np.count_nonzero(conv)}/{n_layers}"
+            )
+
+            if np.all(conv):
+                break
+        
+        temp_hist = np.hstack(temp_hists)
+        temp_hist = temp_hist.T[temp_hist[0] != 0].T
+        
+        fluxes_up, fluxes_down, final_temps, _, dtaus, dT = emit(
             opacities=self.opacities, 
-            temperatures=self.init_temperatures, 
+            temperatures=final_temps, 
             pressures=self.pressures, 
             lam=self.lam, 
             F_TOA=F_toa, 
             g=self.planet.g, 
             m_bar=self.planet.m_bar,
-            n_timesteps=n_timesteps,
-            convergence_thresh=convergence_thresh
+            n_timesteps=1,
+            fluxes_up=fluxes_up, fluxes_down=fluxes_down
         )
+        
         return (
-            Spectrum1D(flux=F_2_up, spectral_axis=self.lam), 
-            final_temps, temperature_history, dtaus
+            Spectrum1D(flux=fluxes_up[-1], spectral_axis=self.lam), 
+            final_temps, temp_hist, dtaus
         )
     
     def emission_dashboard(self, spec, final_temps, temperature_history, dtaus,

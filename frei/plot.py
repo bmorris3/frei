@@ -78,7 +78,7 @@ def dashboard(
 
     cf /= np.sum(cf, axis=0)
 
-    lg, pg = np.meshgrid(lam.value, pressures.value)
+    lg, pg = np.meshgrid(lam.value, pressures.to(u.bar).value)
     cax = ax[1].pcolormesh(lg, pg, cf[::-1], cmap=plt.cm.Greys, shading='auto')
     plt.colorbar(cax, ax=ax[1])
     ax[1].set_yscale('log')
@@ -87,7 +87,7 @@ def dashboard(
         xlabel=r'Wavelength [$\mu$m]', ylabel='Pressure [bar]',
         title='Contrib Func',
         xlim=[lam.value.min(), lam.value.max()], 
-        ylim=[pressures.value.max(), pressures.value.min()]
+        ylim=[pressures.to(u.bar).value.max(), pressures.to(u.bar).value.min()]
     )
     ax[0].set(
         xlabel=r'Wavelength [$\mu$m]', title='Emission spectrum',
@@ -98,9 +98,9 @@ def dashboard(
     for i in range(temperature_history.shape[1]):
         color = cmap(i / temperature_history.shape[1])
         if np.all(temperature_history[:, i] != 0):
-            ax[2].semilogy(temperature_history[:-1, i], pressures[:-1],
+            ax[2].semilogy(temperature_history[:, i], pressures[:].to(u.bar),
                            c=color, alpha=0.3)
-    ax[2].semilogy(temps[:-1], pressures[:-1], '-', color='k', lw=3)
+    ax[2].semilogy(temps[:], pressures[:].to(u.bar), '-', color='k', lw=3)
     ax[2].invert_yaxis()
     ax[2].annotate("Initial", (0.1, 0.18), color=cmap(0),
                    xycoords='axes fraction')
@@ -110,14 +110,14 @@ def dashboard(
     )
 
     fastchem_mmr, fastchem_vmr = chemistry(
-        temps[:-1], pressures[:-1], opacities.keys(), return_vmr=True
+        temps[:], pressures[:], opacities.keys(), return_vmr=True
     )
 
     for isotopologue in fastchem_vmr:
         
         species_name = iso_to_species(isotopologue)
         ax[3].semilogy(
-            np.log10(fastchem_vmr[isotopologue]), pressures[:-1],
+            np.log10(fastchem_vmr[isotopologue]), pressures.to(u.bar),
             label=species_name.replace('2', '$_2$'), lw=2
         )
     ax[3].legend()
@@ -129,7 +129,7 @@ def dashboard(
     )
 
     k, sigma_scattering = kappa(
-        opacities, np.interp(1 * u.bar, pressures[::-1], temps[::-1]), 1 * u.bar, lam
+        opacities, np.interp(1 * u.bar, pressures[::-1].to(u.bar), temps[::-1]), 1 * u.bar, lam
     )
     with quantity_support():
         ax[4].loglog(lam, k.to(u.cm ** 2 / u.g), label='Total')

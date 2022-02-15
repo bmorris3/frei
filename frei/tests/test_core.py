@@ -25,7 +25,7 @@ def test_example_opacities():
         T_ref=T_ref
     )
 
-    op = grid.load_opacities(opacities=load_example_opacity(grid))
+    op = grid.load_opacities(opacities=load_example_opacity(grid, scale_factor=1))
     # Check that the synthetic opacities are loaded into the H2O key:
     assert "1H2-16O" in op
     for attr in ['wavelength', 'temperature', 'pressure']:
