@@ -131,9 +131,10 @@ def dashboard(
     k, sigma_scattering = kappa(
         opacities, np.interp(1 * u.bar, pressures[::-1].to(u.bar), temps[::-1]), 1 * u.bar, lam
     )
+
     with quantity_support():
-        ax[4].loglog(lam, k.to(u.cm ** 2 / u.g), label='Total')
-        ax[4].loglog(lam, sigma_scattering.to(u.cm ** 2 / u.g), label='Scattering')
+        ax[4].loglog(lam, k.to(u.cm ** 2 / u.g).flatten(), label='Total')
+        ax[4].loglog(lam, sigma_scattering.to(u.cm ** 2 / u.g).flatten(), label='Scattering')
     ax[4].set(
         xlabel=r'Wavelength [$\mu$m]', ylabel='Opacity [cm$^2$ g$^{-1}$]'
     )

@@ -50,14 +50,16 @@ def test_example_opacities():
 
     # Wavelength at peak flux should be close to this:
     assert_quantity_allclose(
-        spec.wavelength[spec.flux.argmax()], 1.1449 * u.um, atol=0.02 * u.um
+        spec.wavelength[spec.flux.argmax()].to(u.um), 
+        1.1518 * u.um, 
+        atol=0.02 * u.um
     )
 
     # Flux at peak flux should be close to this:
     flux_unit = u.erg/u.s/u.cm**3
     assert_quantity_allclose(
         spec.flux.max().to(flux_unit),
-        1.545907e+13 * flux_unit,
+        1.296e13 * flux_unit,
         atol=0.1e13 * flux_unit
     )
 

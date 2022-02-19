@@ -237,10 +237,10 @@ class Grid(object):
         ----------
         n_timesteps : int
             Maximum number of timesteps to take towards radiative equilibrium
-        convergence_thresh : ~astropy.units.Quantity
-            When the maximum change in temperature between timesteps is less than
-            ``convergence_thresh``, accept this timestep as "converged".
-            
+        convergence_dT : ~astropy.units.Quantity
+            Alternatively, set the maximum change in temperature before 
+            considered converged
+
         Returns
         -------
         spec : specutils.Spectrum1D
@@ -254,9 +254,6 @@ class Grid(object):
         n_zero_crossings : int
             Number of changes in sign of ∆T in each layer before 
             considered converged
-        convergence_dT : ~astropy.units.Quantity
-            Alternatively, set the maximum change in temperature before 
-            considered converged
         """
         if self.opacities is None:
             raise ValueError("Must load opacities before computing emission spectrum.")
@@ -268,7 +265,9 @@ class Grid(object):
         fluxes_up = np.zeros((n_layers, n_wavelengths)) * flux_unit
         temp_hists = []
         max_dTs = []
-        timestep_iterator = trange(n_timesteps)
+        timestep_iterator = (
+            trange(n_timesteps) if n_timesteps > 1 else range(n_timesteps)
+        )
 
         for i in timestep_iterator:
         
@@ -309,9 +308,10 @@ class Grid(object):
             conv = (np.count_nonzero(
                 np.sign(diffs[1:]) != np.sign(diffs[:-1]), axis=0
             ) > n_zero_crossings) | (np.abs(dT) < convergence_dT)
-            timestep_iterator.set_description(
-                f"max|∆T|={max_dT:.1f}; conv = {np.count_nonzero(conv)}/{n_layers}"
-            )
+            if n_timesteps > 1:
+                timestep_iterator.set_description(
+                    f"max|∆T|={max_dT:.1f}; conv = {np.count_nonzero(conv)}/{n_layers}"
+                )
 
             if np.all(conv):
                 break

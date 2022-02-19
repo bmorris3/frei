@@ -31,10 +31,9 @@ interp_kwargs = dict(
 def mapfunc_exact(
         group, temperature=2500, pressure=1e-08, interp_kwargs=interp_kwargs
 ):
-    # https://xarray.pydata.org/en/stable/examples/apply_ufunc_vectorize_1d.html
     wl = group.wavelength
     op = group.interp(
-        temperature=temperature, pressure=pressure, **interp_kwargs
+        dict(temperature=temperature, pressure=pressure), **interp_kwargs
     ).opacity
     
     Delta_x = wl.max() - wl.min()
@@ -42,17 +41,14 @@ def mapfunc_exact(
 
 
 def delayed_map_exact_concat(grouped, temperatures, pressures, lam, client):
-    import dask
-    results = []
-    for i, (name, group) in enumerate(grouped):
-        results.append(
-            dask.delayed(mapfunc_exact)(
-                group, temperature=temperatures.value,
-                pressure=pressures.to(u.bar).value
-            )
-        )
 
-    r = client.compute(results)
+    r = client.submit(
+        grouped.map, mapfunc_exact,
+        temperature=temperatures.value,
+        pressure=pressures.to(u.bar).value
+    )
+
+    r = client.compute(r)
     results = client.gather(r)
     # Concatenate the results from each delayed task into a big dask array
     return xr.concat(
@@ -118,21 +114,32 @@ def binned_opacity(
     ]
 
     results = dict()    
-    xr_kwargs = dict(chunks='auto')
+    xr_kwargs = dict(
+        #  chunks=dict(wavelength=10_000)
+    )
 
     pbar = tqdm(zip(fetch_species, fetch_paths), total=len(fetch_paths))
 
     for species_name, species_path in pbar:
         isotopologue = species_path.split('/')[-1].split('_')[0]
-        species_ds = xr.open_dataset(species_path, **xr_kwargs)
-        pbar.set_description(f'Loading opacity for {isotopologue}')
-        species_grouped = species_ds.groupby_bins("wavelength", wl_bins)
-        species_binned = delayed_map_exact_concat(
-            species_grouped, temperatures, pressures, lam, client
-        )
-        results[isotopologue] = species_binned
 
-        del species_ds, species_grouped
+        pbar.set_description(f'Opacities for {isotopologue} (opening)')
+        species_ds = xr.open_dataset(species_path, **xr_kwargs)
+        pbar.set_description(f'Opacities for {isotopologue} (binning)')
+        species_grouped = species_ds.groupby_bins("wavelength", wl_bins)
+        pbar.set_description(f'Opacities for {isotopologue} (integrating)')
+        species_binned = species_grouped.map(
+            mapfunc_exact, 
+            temperature=temperatures.value,
+            pressure=pressures.to(u.bar).value
+        )
+        pbar.set_description(f'Opacities for {isotopologue} (interp)')
+        results[isotopologue] = species_binned.interp(
+            dict(wavelength=lam.to(u.um).value), 
+            method='linear', kwargs=dict(fill_value='extrapolate')
+    )
+
+        del species_ds, species_grouped, species_binned
     return results
 
 
@@ -197,42 +204,42 @@ def kappa(
         Scattering cross section
     """
     sigma_scattering = rayleigh_H2(lam, m_bar) + rayleigh_He(lam, m_bar)
-    ops = [sigma_scattering]
+
+    if pressure.isscalar and temperature.isscalar: 
+        pressure = u.Quantity([pressure])
+        temperature = u.Quantity([temperature])
+
+    ops = []
+
     interp_kwargs = dict(
         method='linear', 
-        kwargs=dict(fill_value='extrapolate')
+        kwargs=dict(fill_value=0)
     )
 
-    if len(temperature.shape) == 0:
-        fastchem_mmr = chemistry(
-            u.Quantity([temperature]), u.Quantity([pressure]), opacities.keys(), m_bar=m_bar
-        )
-    else:
-        fastchem_mmr = chemistry(
-            temperature, pressure, opacities.keys(), m_bar=m_bar
-        )
+    fastchem_mmr = chemistry(
+        temperature, pressure, opacities.keys(), m_bar=m_bar
+    )
 
     for species in opacities:
-        
-        interp_point = dict()
-        
-        # If there is >1 temperature, interpolate over T;
-        # if there is only 1 temperature, don't interpolate over T
-        if len(np.unique(opacities[species].temperature)) > 1:
-            interp_point['temperature'] = temperature.value
-                 
-        interp_point['pressure'] = pressure.to(u.bar).value
 
-        opacity = fastchem_mmr[species] * opacities[species].interp(
-            interp_point, **interp_kwargs
-        ).values * u.cm**2 / u.g
-        
-        ops.append(
-            # If there are multiple entries for the sample temperature, take the zeroth
-            opacity if len(opacity.shape) < 2 else opacity[0]
+        interp_point = dict(
+            pressure=xr.DataArray(pressure.to(u.bar).value, dims='z'),
         )
 
-    return u.Quantity(ops).sum(axis=0), sigma_scattering
+        if len(np.unique(opacities[species].temperature)) > 1:
+            interp_point['temperature'] = xr.DataArray(
+                temperature.value, dims='z'
+            )
+
+        opacity = fastchem_mmr[species][:, None] * opacities[species].interp(
+            **interp_point, **interp_kwargs
+        )
+        ops.append(opacity)
+    if len(ops) == 1:
+        ops = ops[0].values.flatten()
+    elif len(ops) > 1:
+        ops = xr.concat(ops, 'opacities').sum('opacities').values.flatten()
+    return ops * u.cm**2 / u.g + sigma_scattering, sigma_scattering
 
 
 def load_example_opacity(grid, seed=42, scale_factor=20):
@@ -302,7 +309,7 @@ def load_example_opacity(grid, seed=42, scale_factor=20):
                 temperature=grid.init_temperatures, 
                 wavelength=grid.lam.to(u.um).value
             )
-        )
+        ).drop_duplicates('temperature')
     }
     
     return op

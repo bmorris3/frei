@@ -133,6 +133,9 @@ def propagate_fluxes(
     F_2_up, F_1_down : ~astropy.units.Quantity
         Fluxes outgoing to layer 2, and incoming to layer 1
     """
+    omega_0 = omega_0.flatten()
+    delta_tau = delta_tau.flatten()
+    
     # Deitrick 2020 Equation B2
     T = np.exp(-2 * (E(omega_0, g_0) * (E(omega_0, g_0) - omega_0) *
                      (1 - omega_0 * g_0)) ** 0.5 * delta_tau)
@@ -150,9 +153,10 @@ def propagate_fluxes(
     pi = np.pi * (1 - omega_0) / (E(omega_0, g_0) - omega_0)
 
     B1 = BB(T_1)(lam)
-    B2 = BB(T_1)(lam)
+    B2 = BB(T_2)(lam)
+
     # Malik 2017 Equation 5
-    Bprime = (B2 - B1) / delta_tau
+    Bprime = (B1 - B2) / delta_tau
 
     # Deitrick 2022 Eqn B4
     F_2_up = (
@@ -353,7 +357,7 @@ def emit(
         for i in np.arange(1, n_layers):
             
             if i == n_layers - 1:
-                p_2 = pressures.min() / 100
+                p_2 = pressures.min() / 1000
                 T_2 = temps[i]
             else: 
                 p_2 = pressures[i + 1]
@@ -365,7 +369,6 @@ def emit(
             k, sigma_scattering = kappa(
                 opacities, T_1, p_1, lam, m_bar
             )
-
             delta_tau = delta_tau_i(
                 k, p_1, p_2, g
             ).to(u.dimensionless_unscaled).value
@@ -374,19 +377,19 @@ def emit(
             omega_0 = (
                 sigma_scattering / (sigma_scattering + k)
             ).to(u.dimensionless_unscaled).value
-
             if i < n_layers - 1:
                 F_2_down = fluxes_down[i + 1]
             else: 
                 F_2_down = F_TOA
             F_1_up = fluxes_up[i]
-            
+
             F_2_up, F_1_down = propagate_fluxes(
                 lam,
                 F_1_up, F_2_down, T_1, T_2,
                 delta_tau,
                 omega_0=omega_0, g_0=0
             )
+
             if i < n_layers - 1: 
                 fluxes_up[i + 1] = F_2_up
             fluxes_down[i] = F_1_down
@@ -401,7 +404,6 @@ def emit(
             temperature_changes[i] = delta_temperature(
                 delta_F_i_dz, p_1, p_2, T_1, dt, g
             ).decompose()
-
         dT = u.Quantity(temperature_changes)
         temperature_history[:, j + 1] = temps - dT
         converged = np.all(np.abs(dT).max() < convergence_thresh)
@@ -527,7 +529,7 @@ def absorb(
             )
 
             dt = delta_t_i(p_1, p_2, T_1, T_2, delta_F_i_dz, g, m_bar=m_bar)
-            temperature_changes[i] = delta_temperature(
+            temperature_changes[i + 1] = delta_temperature(
                 delta_F_i_dz, p_1, p_2, T_1, dt, g
             ).decompose()
             
