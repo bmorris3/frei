@@ -195,7 +195,9 @@ class Grid(object):
             f"lam=[{self.lam[0]}...{self.lam[-1]}]>"
         )
     
-    def load_opacities(self, species=None, path=None, opacities=None, client=None):
+    def load_opacities(
+        self, species=None, path=None, opacities=None, client=None, force_reload=False
+    ):
         """
         Load opacity tables from path.
 
@@ -216,7 +218,7 @@ class Grid(object):
         opacities : dict
             Opacity dictionary of xarray.DataArray's
         """
-        if self.opacities is None and opacities is None:
+        if (self.opacities is None and opacities is None) or force_reload:
             self.opacities = binned_opacity(
                 self.init_temperatures,
                 self.pressures, self.wl_bins, self.lam, client, 
@@ -267,7 +269,7 @@ class Grid(object):
         temp_hists = []
         max_dTs = []
         timestep_iterator = trange(n_timesteps)
-        
+
         for i in timestep_iterator:
         
             fluxes_up, fluxes_down, final_temps, temperature_history_emit, _, dT = emit(
@@ -376,7 +378,7 @@ class Grid(object):
             self.lam, spec.flux, phoenix_lowres_padded, dtaus, 
             self.pressures, final_temps, temperature_history, self.opacities
         )
-        
+
         return fig, ax
 
 
