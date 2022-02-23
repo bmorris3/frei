@@ -9,6 +9,8 @@ from astropy.constants import m_p
 import xarray as xr
 
 from .chemistry import chemistry
+from .interp import groupby_bins_agg
+
 
 __all__ = [
     'binned_opacity',
@@ -62,7 +64,8 @@ def delayed_map_exact_concat(grouped, temperatures, pressures, lam, client):
 
 
 def binned_opacity(
-    temperatures, pressures, wl_bins, lam, client, species=None, path=None
+    temperatures, pressures, wl_bins, lam, groupies=True,
+        species=None, path=None
 ):
     """
     Compute opacity for all available species, binned to wavelengths lam.
@@ -79,8 +82,6 @@ def binned_opacity(
         Wavelength bin edges
     lam : ~astropy.units.Quantity
         Wavelength bin centers
-    client : None or ~dask.distributed.client.Client
-        Client for distributed dask computation on opacity tables
     path : str (optional)
         Path to opacity files.
     species : list or None (optional)
@@ -115,10 +116,36 @@ def binned_opacity(
 
     results = dict()    
     xr_kwargs = dict(
-        #  chunks=dict(wavelength=10_000)
+         # chunks='auto'
     )
 
     pbar = tqdm(zip(fetch_species, fetch_paths), total=len(fetch_paths))
+
+    if groupies:
+        for species_name, species_path in pbar:
+            isotopologue = species_path.split('/')[-1].split('_')[0]
+
+            pbar.set_description(f'Opacities for {isotopologue} (opening)')
+            species_ds = xr.open_dataset(species_path, **xr_kwargs)
+            pbar.set_description(f'Opacities for {isotopologue} (cropping)')
+            dropped = species_ds.opacity.where(
+                (species_ds.wavelength > wl_bins.min()) &
+                (species_ds.wavelength < wl_bins.max()),
+                drop=True
+            )
+            pbar.set_description(f'Opacities for {isotopologue} (integrating)')
+            group_by = groupby_bins_agg(
+                dropped, dropped.wavelength, wl_bins, func=np.trapz
+            ) * (wl_bins[1:] - wl_bins[:-1]) * 1e-3
+            pbar.set_description(f'Opacities for {isotopologue} (interp)')
+            results[isotopologue] = group_by.interp(
+                dict(
+                    temperature=temperatures.value,
+                    pressure=pressures.to(u.bar).value
+                ), **interp_kwargs
+            )
+            del species_ds, dropped
+        return results
 
     for species_name, species_path in pbar:
         isotopologue = species_path.split('/')[-1].split('_')[0]
@@ -129,15 +156,15 @@ def binned_opacity(
         species_grouped = species_ds.groupby_bins("wavelength", wl_bins)
         pbar.set_description(f'Opacities for {isotopologue} (integrating)')
         species_binned = species_grouped.map(
-            mapfunc_exact, 
+            mapfunc_exact,
             temperature=temperatures.value,
             pressure=pressures.to(u.bar).value
         )
         pbar.set_description(f'Opacities for {isotopologue} (interp)')
         results[isotopologue] = species_binned.interp(
-            dict(wavelength=lam.to(u.um).value), 
+            dict(wavelength=lam.to(u.um).value),
             method='linear', kwargs=dict(fill_value='extrapolate')
-    )
+        )
 
         del species_ds, species_grouped, species_binned
     return results

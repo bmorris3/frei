@@ -9,3 +9,4 @@ from .phoenix import *  # noqa
 from .tp import *  # noqa
 from .twostream import *  # noqa
 from .plot import *  # noqa
+from .interp import *  # noqa

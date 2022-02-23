@@ -61,7 +61,6 @@ def BB(temperature):
     # h = 6.62607015e-34  # J s
     # c = 299792458.0  # m/s
     # k_B = 1.380649e-23  # J/K
-    assert temperature > 0 * u.K
     return lambda wavelength: (
             2 * h * c ** 2 / np.power(wavelength, 5) /
             np.expm1(h * c / (wavelength * k_B * temperature))
@@ -357,7 +356,7 @@ def emit(
         for i in np.arange(1, n_layers):
             
             if i == n_layers - 1:
-                p_2 = pressures.min() / 1000
+                p_2 = pressures[i] * pressures[-2] / pressures[-3]
                 T_2 = temps[i]
             else: 
                 p_2 = pressures[i + 1]
@@ -529,7 +528,7 @@ def absorb(
             )
 
             dt = delta_t_i(p_1, p_2, T_1, T_2, delta_F_i_dz, g, m_bar=m_bar)
-            temperature_changes[i + 1] = delta_temperature(
+            temperature_changes[i] = delta_temperature(
                 delta_F_i_dz, p_1, p_2, T_1, dt, g
             ).decompose()
             
