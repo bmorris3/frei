@@ -7,6 +7,7 @@ import numpy as np
 import astropy.units as u
 from astropy.constants import m_p
 import xarray as xr
+from jax import numpy as jnp
 
 from .chemistry import chemistry
 from .interp import groupby_bins_agg
@@ -20,8 +21,8 @@ __all__ = [
     'download_atom'
 ]
 
-n_ref_H2 = 2.68678e19 * u.cm**-3
-n_ref_He = 2.546899e19 * u.cm**-3
+n_ref_H2 = 2.68678e19 #* u.cm**-3
+n_ref_He = 2.546899e19 #* u.cm**-3
 K_lambda = 1
 
 interp_kwargs = dict(
@@ -230,43 +231,28 @@ def kappa(
     sigma_scattering : ~astropy.units.Quantity
         Scattering cross section
     """
-    sigma_scattering = rayleigh_H2(lam, m_bar) + rayleigh_He(lam, m_bar)
-
-    if pressure.isscalar and temperature.isscalar: 
-        pressure = u.Quantity([pressure])
-        temperature = u.Quantity([temperature])
+    # sigma_scattering = rayleigh_H2(lam, m_bar) + rayleigh_He(lam, m_bar)
 
     ops = []
-
     interp_kwargs = dict(
         method='linear', 
         kwargs=dict(fill_value=0)
     )
 
-    fastchem_mmr = chemistry(
-        temperature, pressure, opacities.keys(), m_bar=m_bar
-    )
+    fastchem_mmr = {
+        species: 0.1 for species in opacities
+    }
 
     for species in opacities:
-
         interp_point = dict(
-            pressure=xr.DataArray(pressure.to(u.bar).value, dims='z'),
+            pressure=pressure, temperature=temperature
         )
-
-        if len(np.unique(opacities[species].temperature)) > 1:
-            interp_point['temperature'] = xr.DataArray(
-                temperature.value, dims='z'
-            )
-
-        opacity = fastchem_mmr[species][:, None] * opacities[species].interp(
+        opacity = fastchem_mmr[species] * opacities[species].interp(
             **interp_point, **interp_kwargs
         )
         ops.append(opacity)
-    if len(ops) == 1:
-        ops = ops[0].values.flatten()
-    elif len(ops) > 1:
-        ops = xr.concat(ops, 'opacities').sum('opacities').values.flatten()
-    return ops * u.cm**2 / u.g + sigma_scattering, sigma_scattering
+
+    return 0.1 * ops[0].to_numpy()#[0, 0, :]
 
 
 def load_example_opacity(grid, seed=42, scale_factor=20):
@@ -332,9 +318,9 @@ def load_example_opacity(grid, seed=42, scale_factor=20):
             simple_opacities, 
             dims=['pressure', 'temperature', 'wavelength'], 
             coords=dict(
-                pressure=grid.pressures.to(u.bar).value, 
+                pressure=grid.pressures.to(u.Pa).value, 
                 temperature=grid.init_temperatures, 
-                wavelength=grid.lam.to(u.um).value
+                wavelength=grid.lam.to(u.m).value
             )
         ).drop_duplicates('temperature')
     }

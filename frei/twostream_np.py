@@ -2,18 +2,12 @@ import astropy.units as u
 import numpy as np
 from astropy.constants import k_B, m_p, h, c, sigma_sb
 from tqdm.auto import trange
-from jax import numpy as jnp
-from jax import lax, jit, checkpoint
-
-from jax.scipy.ndimage import map_coordinates
-
-from functools import partial
 
 from .opacity import kappa
 
 __all__ = [
     'propagate_fluxes',
-    'emit'
+    'emit', 'absorb'
 ]
 
 flux_unit = u.erg / u.s / u.cm ** 3
@@ -23,7 +17,7 @@ def bolometric_flux(flux, lam):
     """
     Compute bolometric flux from wavelength-dependent flux
     """
-    return jnp.trapz(flux, lam)
+    return np.trapz(flux, lam)
 
 
 def delta_t_i(p_1, p_2, T_1, T_2, delta_F_i_dz, g, m_bar=2.4 * m_p, n_dof=5):
@@ -49,7 +43,30 @@ def delta_t_i(p_1, p_2, T_1, T_2, delta_F_i_dz, g, m_bar=2.4 * m_p, n_dof=5):
     return f_i_pre * dt_radiative
 
 
-@jit
+def BB(temperature):
+    """
+    Compute the blackbody flux
+
+    Parameters
+    ----------
+    temperature : ~astropy.units.Quantity
+        Temperature of the blackbody
+
+    Returns
+    -------
+    bb : function
+        Returns a function which takes the wavelength as an
+        `~astropy.units.Quantity` and returns the Planck flux
+    """
+    # h = 6.62607015e-34  # J s
+    # c = 299792458.0  # m/s
+    # k_B = 1.380649e-23  # J/K
+    return lambda wavelength: (
+            2 * h * c ** 2 / np.power(wavelength, 5) /
+            np.expm1(h * c / (wavelength * k_B * temperature))
+    )
+
+
 def E(omega_0, g_0):
     """
     Improved two-stream equation correction term.
@@ -69,7 +86,7 @@ def E(omega_0, g_0):
         Correction term, E(omega_0, g_0).
     """
     # Deitrick (2020) Eqn 19
-    return jnp.where(
+    return np.where(
         omega_0 > 0.1,
         1.225 - 0.1582 * g_0 - 0.1777 * omega_0 - 0.07465 *
         g_0 ** 2 + 0.2351 * omega_0 * g_0 - 0.05582 * omega_0 ** 2,
@@ -77,41 +94,6 @@ def E(omega_0, g_0):
     )
 
 
-@jit
-def true_fun(x):
-    return 1.0 / x
-
-@jit
-def false_fun(x):
-    return 0.
-
-@jit
-def vectorized_cond(x):
-    """https://github.com/google/jax/issues/1052"""
-    # true_fun and false_fun must act elementwise (i.e. be vectorized)
-    true_op = jnp.where(x > 0., x, 0.5)
-    false_op = jnp.where(x > 0., 0.0, x)
-    return jnp.where(
-        x > 0., 
-        true_fun(true_op), 
-        false_fun(false_op)
-    )
-
-@jit
-def BB(temperature, wavenumber):
-    h = 6.62607015e-34  # J s
-    c = 299792458.0e6  # um/s
-    k_B = 1.380649e-23  # J/K
-    one_over_denom = vectorized_cond(
-        jnp.expm1(h * c / k_B * wavenumber * 
-                  vectorized_cond(temperature))
-    )
-    return (1e18 * # convert microns to meters
-        2 * h * c ** 2 * wavenumber ** 3 * one_over_denom
-    )
-
-
-@jit
 def propagate_fluxes(
         lam, F_1_up, F_2_down, T_1, T_2, delta_tau, omega_0=0, g_0=0, eps=0.5
 ):
@@ -150,11 +132,11 @@ def propagate_fluxes(
     F_2_up, F_1_down : ~astropy.units.Quantity
         Fluxes outgoing to layer 2, and incoming to layer 1
     """
-    omega_0 = omega_0
-    delta_tau = delta_tau
+    omega_0 = omega_0.flatten()
+    delta_tau = delta_tau.flatten()
     
     # Deitrick 2020 Equation B2
-    T = jnp.exp(-2 * (E(omega_0, g_0) * (E(omega_0, g_0) - omega_0) *
+    T = np.exp(-2 * (E(omega_0, g_0) * (E(omega_0, g_0) - omega_0) *
                      (1 - omega_0 * g_0)) ** 0.5 * delta_tau)
 
     # Malik 2017 Equation 13
@@ -167,21 +149,13 @@ def propagate_fluxes(
     chi = zeta_minus ** 2 * T ** 2 - zeta_plus ** 2
     xi = zeta_plus * zeta_minus * (1 - T ** 2)
     psi = (zeta_minus ** 2 - zeta_plus ** 2) * T
-    pi = jnp.pi * (1 - omega_0) / (E(omega_0, g_0) - omega_0)
+    pi = np.pi * (1 - omega_0) / (E(omega_0, g_0) - omega_0)
 
-    wavenumber = 1.0 / lam
-    
-    B1 = BB(T_1, wavenumber)
-    B2 = BB(T_2, wavenumber)
+    B1 = BB(T_1)(lam)
+    B2 = BB(T_2)(lam)
 
-    x = jnp.where(delta_tau == 0.0, 1.0, delta_tau)
-    
     # Malik 2017 Equation 5
-    Bprime = jnp.where(
-        delta_tau == 0,
-        0,
-        (B1 - B2) / x,
-    )
+    Bprime = (B1 - B2) / delta_tau
 
     # Deitrick 2022 Eqn B4
     F_2_up = (
@@ -210,7 +184,7 @@ def delta_z_i(temperature_i, pressure_i, pressure_ip1, g, m_bar=2.4 * m_p):
     Malik et al. (2017) Equation 18
     """
     return ((k_B * temperature_i) / (m_bar * g) *
-            jnp.log(pressure_i / pressure_ip1))
+            np.log(pressure_i / pressure_ip1))
 
 
 def div_bol_net_flux(
@@ -249,7 +223,7 @@ def c_p(m_bar=2.4 * m_p, n_dof=5):
     """
     return (2 + n_dof) / (2 * m_bar) * k_B
 
-@jit
+
 def delta_tau_i(kappa_i, p_1, p_2, g):
     """
     Contribution to optical depth from layer i, Malik et al. (2017) Equation 19
@@ -313,9 +287,10 @@ def convective_flux(
     return 0 * flux_unit * u.cm
 
 
-@jit
 def emit(
-    offline_opacities, temperatures, pressures, lam, F_TOA, g, m_bar=2.4 * m_p.si.value, alpha=1, opacity_grid_temperatures=None
+    opacities, temperatures, pressures, lam, F_TOA, g, m_bar=2.4 * m_p,
+    n_timesteps=50, convergence_thresh=10 * u.K, alpha=1, fluxes_up=None,
+    fluxes_down=None
 ):
     """
     Compute emission spectrum.
@@ -356,76 +331,220 @@ def emit(
     n_layers = len(pressures)
     n_wavelengths = len(lam)
 
-    fluxes_up = jnp.zeros((n_layers, n_wavelengths))
-    fluxes_down = jnp.zeros((n_layers, n_wavelengths))
-    fluxes_down = fluxes_down.at[-1].set(F_TOA)
+    if fluxes_up is None: 
+        fluxes_up = np.zeros((n_layers, n_wavelengths)) * flux_unit
+
+    if fluxes_down is None:
+        fluxes_down = np.zeros((n_layers, n_wavelengths)) * flux_unit
+        fluxes_down[-1] = F_TOA
     
-    temps = temperatures
-
-    def body_fun(
-        i, fluxes, pressures=pressures, 
-        temps=temps, 
-        offline_opacities=offline_opacities, g=g,
-        opacity_grid_temperatures=opacity_grid_temperatures
-    ):
-        fluxes_up = fluxes[:fluxes.shape[0]//2]
-        fluxes_down = fluxes[fluxes.shape[0]//2:]
-        
-        p_2 = pressures[i + 1]
-        T_2 = temps[i + 1]
-
-        p_1 = pressures[i]
-        T_1 = temps[i]
-
-        def outer(
-            carry, j, i=i, temps=temps, 
-            offline_opacities=offline_opacities, 
-            opacity_grid_temperatures=opacity_grid_temperatures
-        ):
-            """
-            Iterate over each lam
-            """
-            def interp_over_T(
-                carry, x, 
-                op=offline_opacities[i, :, j], temps=temps, 
-                opacity_grid_temperatures=opacity_grid_temperatures
-            ):
-                """
-                Interpolate over temperature at each p and lam (1D)
-                """
-                interp_T = jnp.interp(x, opacity_grid_temperatures, op)
-                return carry, interp_T
-            return carry, lax.scan(interp_over_T, 0.0, temps)[1]  
-        
-        kappa_interp_i = lax.scan(
-            outer, 0.0, jnp.arange(len(lam))
-        )[1][:, 0]
-
-        delta_tau = delta_tau_i(
-            kappa_interp_i, p_1, p_2, g
-        )
-        
-        # Single scattering albedo, Deitrick (2020) Eqn 17
-        omega_0 = 0.0
-        F_2_down = fluxes_down[i + 1]
-        F_1_up = fluxes_up[i]
-        F_2_up, F_1_down = propagate_fluxes(
-            lam,
-            F_1_up, F_2_down, T_1, T_2,
-            delta_tau,
-            omega_0=omega_0, g_0=0
-        )
-
-        return jnp.vstack([
-            fluxes_up.at[i + 1].set(F_2_up), 
-            fluxes_down.at[i].set(F_1_down)
-        ])
-
-    res = lax.fori_loop(1, n_layers, body_fun, jnp.vstack([fluxes_up, fluxes_down]))
+    # from bottom of the atmosphere
+    temperature_history = np.zeros((n_layers, n_timesteps + 1)) * u.K
+    temperature_history[:, 0] = temperatures.copy()
     
-    fluxes_up = res[:res.shape[0]//2]
-    fluxes_down = res[res.shape[0]//2:]
-    
+    if n_timesteps > 1:
+        timestep_iterator = trange(n_timesteps)
+
+    else:
+        timestep_iterator = np.arange(n_timesteps)
+
+    for j in timestep_iterator:
+        dtaus = [[1, ] * n_wavelengths]
+        temps = temperature_history[:, j]
+        temperature_changes = np.zeros(n_layers) * u.K
+
+        for i in np.arange(1, n_layers):
+            
+            if i == n_layers - 1:
+                p_2 = pressures[i] * pressures[-2] / pressures[-3]
+                T_2 = temps[i]
+            else: 
+                p_2 = pressures[i + 1]
+                T_2 = temps[i + 1]
+            
+            p_1 = pressures[i]
+            T_1 = temps[i]
+
+            k, sigma_scattering = kappa(
+                opacities, T_1, p_1, lam, m_bar
+            )
+            delta_tau = delta_tau_i(
+                k, p_1, p_2, g
+            ).to(u.dimensionless_unscaled).value
+            dtaus.append(delta_tau)
+            # Single scattering albedo, Deitrick (2020) Eqn 17
+            omega_0 = (
+                sigma_scattering / (sigma_scattering + k)
+            ).to(u.dimensionless_unscaled).value
+            if i < n_layers - 1:
+                F_2_down = fluxes_down[i + 1]
+            else: 
+                F_2_down = F_TOA
+            F_1_up = fluxes_up[i]
+
+            F_2_up, F_1_down = propagate_fluxes(
+                lam,
+                F_1_up, F_2_down, T_1, T_2,
+                delta_tau,
+                omega_0=omega_0, g_0=0
+            )
+
+            if i < n_layers - 1: 
+                fluxes_up[i + 1] = F_2_up
+            fluxes_down[i] = F_1_down
+
+            delta_F_i_dz, dz = div_bol_net_flux(
+                bolometric_flux(F_2_up, lam), bolometric_flux(F_2_down, lam),
+                bolometric_flux(F_1_up, lam), bolometric_flux(F_1_down, lam),
+                T_1, T_2, p_1, p_2, g, alpha=alpha, m_bar=m_bar
+            )
+            dt = delta_t_i(p_1, p_2, T_1, T_2, delta_F_i_dz, g, m_bar=m_bar)
+
+            temperature_changes[i] = delta_temperature(
+                delta_F_i_dz, p_1, p_2, T_1, dt, g
+            ).decompose()
+        dT = u.Quantity(temperature_changes)
+        temperature_history[:, j + 1] = temps - dT
+        converged = np.all(np.abs(dT).max() < convergence_thresh)
+        if n_timesteps > 1:
+            timestep_iterator.set_description(
+                f"max|∆T|={np.abs(dT).max():.1f}"
+            )
+
+            # Stop iterating if T-p profile changes by <convergence_thresh
+            if converged:
+                break
+
     return (
-        fluxes_up, fluxes_down
+        fluxes_up, fluxes_down, temperature_history[:, j + 1], 
+        temperature_history, np.array(dtaus), dT
+    )
+
+
+def absorb(
+    opacities, temperatures, pressures, lam, F_TOA, g, m_bar=2.4 * m_p,
+    n_timesteps=50, convergence_thresh=10 * u.K, alpha=1, fluxes_up=None,
+    fluxes_down=None
+):
+    """
+    Compute emission spectrum.
+
+    Parameters
+    ----------
+    opacities : dict
+        Opacity database binned to wavelength grid.
+    temperatures : ~astropy.units.Quantity
+        Temperature grid
+    pressures : ~astropy.units.Quantity
+        Pressure grid
+    lam : ~astropy.units.Quantity
+        Wavelength grid
+    F_TOA : ~astropy.units.Quantity
+        Flux at the top of the atmosphere
+    g : ~astropy.units.Quantity
+        Surface graivty
+    m_bar : ~astropy.units.Quantity
+        Mean molecular weight
+    n_timesteps : int
+        Maximum number of timesteps in iteration for radiative equilibrium
+    convergence_thresh : ~astropy.units.Quantity
+        When the maximum change in temperature between timesteps is less than
+        ``convergence_thresh``, accept this timestep as "converged".
+
+    Returns
+    -------
+    F_2_up : ~astropy.units.Quantity
+        Outgoing flux
+    final_temps : ~astropy.units.Quantity
+        Final temperature grid
+    temperature_history : ~astropy.units.Quantity
+        Grid of temperatures with dimensions (n_layers, n_timesteps)
+    dtaus : ~numpy.ndarray
+        Change in optical depth in final iteration
+    """
+    n_layers = len(pressures)
+    n_wavelengths = len(lam)
+
+    if fluxes_up is None: 
+        fluxes_up = np.zeros((n_layers, n_wavelengths)) * flux_unit
+        fluxes_up[0] = np.pi * BB(temperatures[0])(lam)
+
+    if fluxes_down is None:
+        fluxes_down = np.zeros((n_layers, n_wavelengths)) * flux_unit
+        fluxes_down[-1] = F_TOA
+
+    # from bottom of the atmosphere
+    temperature_history = np.zeros((n_layers, n_timesteps + 1)) * u.K
+    temperature_history[:, 0] = temperatures.copy()
+    
+    if n_timesteps > 1:
+        timestep_iterator = trange(n_timesteps)
+
+    else:
+        timestep_iterator = np.arange(n_timesteps)
+
+    for j in timestep_iterator:
+        dtaus = [[1, ] * n_wavelengths]
+        temps = temperature_history[:, j]
+        temperature_changes = np.zeros(n_layers) * u.K
+        
+        for i in np.arange(0, n_layers - 1)[::-1]:
+            p_2 = pressures[i + 1]
+            T_2 = temps[i + 1]
+            
+            p_1 = pressures[i]
+            T_1 = temps[i]
+
+            k, sigma_scattering = kappa(
+                opacities, T_1, p_1, lam, m_bar
+            )
+
+            delta_tau = delta_tau_i(
+                k, p_1, p_2, g
+            ).to(u.dimensionless_unscaled).value
+            dtaus.append(delta_tau)
+            # Single scattering albedo, Deitrick (2020) Eqn 17
+            omega_0 = (
+                sigma_scattering / (sigma_scattering + k)
+            ).to(u.dimensionless_unscaled).value
+
+            F_2_down = fluxes_down[i + 1]
+            F_1_up = fluxes_up[i]
+            
+            F_2_up, F_1_down = propagate_fluxes(
+                lam,
+                F_1_up, F_2_down, T_1, T_2,
+                delta_tau,
+                omega_0=omega_0, g_0=0
+            )
+ 
+            fluxes_up[i + 1] = F_2_up
+            fluxes_down[i] = F_1_down
+
+            delta_F_i_dz, dz = div_bol_net_flux(
+                bolometric_flux(F_2_up, lam), bolometric_flux(F_2_down, lam),
+                bolometric_flux(F_1_up, lam), bolometric_flux(F_1_down, lam),
+                T_1, T_2, p_1, p_2, g, alpha=alpha, m_bar=m_bar
+            )
+
+            dt = delta_t_i(p_1, p_2, T_1, T_2, delta_F_i_dz, g, m_bar=m_bar)
+            temperature_changes[i] = delta_temperature(
+                delta_F_i_dz, p_1, p_2, T_1, dt, g
+            ).decompose()
+            
+        dT = u.Quantity(temperature_changes)
+        temperature_history[:, j + 1] = temps - dT
+        converged = np.all(np.abs(dT).max() < convergence_thresh)
+        if n_timesteps > 1:
+            timestep_iterator.set_description(
+                f"max|∆T|={np.abs(dT).max():.1f}"
+            )
+
+            # Stop iterating if T-p profile changes by <convergence_thresh
+            if converged:
+                break
+
+    return (
+        fluxes_up, fluxes_down, temperature_history[:, j + 1], 
+        temperature_history, np.array(dtaus), dT
     )

@@ -4,12 +4,14 @@ from astropy.constants import m_p, G, sigma_sb
 from specutils import Spectrum1D
 from tqdm.auto import trange 
 
+from jax import numpy as jnp
+
 from .twostream import BB
 from .tp import pressure_grid, temperature_grid
-from .opacity import binned_opacity
+from .opacity import binned_opacity, kappa
 from .phoenix import get_binned_phoenix_spectrum
 from .plot import dashboard
-from .twostream import emit, absorb
+from .twostream import emit#, absorb
 
 __all__ = [
     'dask_client',
@@ -52,14 +54,14 @@ def F_TOA(lam, T_star=5800*u.K, f=2/3, a_rstar=float(0.03 * u.AU / u.R_sun)):
     return (f * a_rstar ** -2 * 
         1 / (2 * np.pi) * 
         (np.pi * B_star(T_star, lam))
-    ).to(u.erg/u.s/u.cm**3, u.spectral_density(lam))
+    )#.to(u.erg/u.s/u.cm**3, u.spectral_density(lam))
 
 
 def B_star(T_star, lam):
     """
     Compute the blackbody spectrum of the star
     """
-    return BB(T_star)(lam)
+    return BB(jnp.log(T_star), jnp.log(lam))
 
 
 class Planet(object): 
@@ -259,83 +261,34 @@ class Grid(object):
         if self.opacities is None:
             raise ValueError("Must load opacities before computing emission spectrum.")
         flux_unit = u.erg / u.s / u.cm**3
-        F_toa = F_TOA(self.lam, T_star=self.planet.T_star, a_rstar=self.planet.a_rstar)
-        final_temps = self.init_temperatures.copy()
+        F_toa = jnp.zeros_like(self.lam.si.value) # F_TOA(self.lam.si.value, T_star=self.planet.T_star, a_rstar=self.planet.a_rstar)
+        temps = self.init_temperatures.si.value.copy()
         n_layers, n_wavelengths = len(self.pressures), len(self.lam)
-        fluxes_down = np.zeros((n_layers, n_wavelengths)) * flux_unit
-        fluxes_up = np.zeros((n_layers, n_wavelengths)) * flux_unit
-        temp_hists = []
-        max_dTs = []
-        timestep_iterator = (
-            trange(n_timesteps) if n_timesteps > 1 else range(n_timesteps)
+        fluxes_down = jnp.zeros((n_layers, n_wavelengths))# * flux_unit
+        fluxes_up = jnp.zeros((n_layers, n_wavelengths))# * flux_unit
+        
+        offline_opacities = kappa(
+            self.opacities, temps, self.pressures.si.value, self.lam.si.value, self.planet.m_bar.si.value
         )
 
-        for i in timestep_iterator:
-        
-            fluxes_up, fluxes_down, final_temps, temperature_history_emit, _, dT = emit(
-                opacities=self.opacities, 
-                temperatures=final_temps, 
-                pressures=self.pressures, 
-                lam=self.lam, 
-                F_TOA=F_toa, 
-                g=self.planet.g, 
-                m_bar=self.planet.m_bar,
-                n_timesteps=1,
-                alpha=self.planet.alpha,
-                fluxes_up=fluxes_up, fluxes_down=fluxes_down
-            )
-
-            fluxes_up, fluxes_down, final_temps, temperature_history_absorb, _, dT = absorb(
-                opacities=self.opacities, 
-                temperatures=final_temps, 
-                pressures=self.pressures, 
-                lam=self.lam, 
-                F_TOA=F_toa, 
-                g=self.planet.g, 
-                m_bar=self.planet.m_bar,
-                n_timesteps=1,
-                alpha=self.planet.alpha, 
-                fluxes_up=fluxes_up, fluxes_down=fluxes_down
-            )
-            
-            max_dT = np.abs(dT).max()
-            # Check for convergence with 6 sign flips in temperature history diff
-            temp_hists.append(temperature_history_absorb)
-            max_dTs.append(max_dT)
-
-            temp_hist = np.hstack(temp_hists)
-            temp_hist = temp_hist.T[temp_hist[0] != 0].T            
-            diffs = np.diff(temp_hist.value.T, axis=0)
-            conv = (np.count_nonzero(
-                np.sign(diffs[1:]) != np.sign(diffs[:-1]), axis=0
-            ) > n_zero_crossings) | (np.abs(dT) < convergence_dT)
-            if n_timesteps > 1:
-                timestep_iterator.set_description(
-                    f"max|∆T|={max_dT:.1f}; conv = {np.count_nonzero(conv)}/{n_layers}"
-                )
-
-            if np.all(conv):
-                break
-        
-        temp_hist = np.hstack(temp_hists)
-        temp_hist = temp_hist.T[temp_hist[0] != 0].T
-        
-        fluxes_up, fluxes_down, final_temps, _, dtaus, dT = emit(
-            opacities=self.opacities, 
-            temperatures=final_temps, 
-            pressures=self.pressures, 
-            lam=self.lam, 
+        fluxes_up, fluxes_down = emit(
+            offline_opacities, 
+            temperatures=temps, 
+            pressures=self.pressures.si.value, 
+            lam=self.lam.si.value, 
             F_TOA=F_toa, 
-            g=self.planet.g, 
-            m_bar=self.planet.m_bar,
+            g=self.planet.g.si.value, 
+            m_bar=self.planet.m_bar.si.value,
             n_timesteps=1,
+            alpha=self.planet.alpha,
             fluxes_up=fluxes_up, fluxes_down=fluxes_down
         )
-        
-        return (
-            Spectrum1D(flux=fluxes_up[-1], spectral_axis=self.lam), 
-            final_temps, temp_hist, dtaus
-        )
+
+        return fluxes_up[-1]
+        # return Spectrum1D(
+        #     flux=np.array(fluxes_up[-1])*flux_unit, 
+        #     spectral_axis=self.lam
+        # )
     
     def emission_dashboard(self, spec, final_temps, temperature_history, dtaus,
                            T_eff=None, plot_phoenix=True, cache=False):
